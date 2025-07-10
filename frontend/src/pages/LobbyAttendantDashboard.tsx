@@ -24,6 +24,10 @@ import ExportReports from '../components/ExportReports';
 import BulkActions from '../components/BulkActions';
 import TouchOptimizedCard from '../components/TouchOptimizedCard';
 import dayjs from 'dayjs';
+import { DateRange, Range, RangeKeyDict } from 'react-date-range';
+import { addDays, startOfWeek, endOfWeek, format } from 'date-fns';
+import 'react-date-range/dist/styles.css';
+import 'react-date-range/dist/theme/default.css';
 
 interface DashboardStats {
   totalVisitors: number;
@@ -61,6 +65,15 @@ const LobbyAttendantDashboard: React.FC = () => {
   const [visitorsPerPage, setVisitorsPerPage] = useState(10);
   const [paginatedVisitors, setPaginatedVisitors] = useState<any[]>([]);
   
+  const [dateRange, setDateRange] = useState<{ startDate: Date; endDate: Date; key: string }[]>([
+    {
+      startDate: startOfWeek(new Date(), { weekStartsOn: 1 }),
+      endDate: endOfWeek(new Date(), { weekStartsOn: 1 }),
+      key: 'selection',
+    },
+  ]);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
   const { visitors, setVisitors: setContextVisitors } = useVisitors();
 
   const getAuthToken = () => {
@@ -332,6 +345,41 @@ const LobbyAttendantDashboard: React.FC = () => {
     }
   };
 
+  // Fetch visitors for selected date range
+  const fetchVisitorsForRange = async (startDate: Date, endDate: Date) => {
+    try {
+      setLoading(true);
+      const token = getAuthToken();
+      if (!token) {
+        setError('No authentication token found. Please login.');
+        return;
+      }
+      const start = format(startDate, 'yyyy-MM-dd');
+      const end = format(endDate, 'yyyy-MM-dd');
+      const response = await axiosInstance.get(`/api/lobby/today-all-visits/?start_date=${start}&end_date=${end}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      setContextVisitors(response.data);
+      setError(null);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to fetch dashboard visits');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch on mount and when dateRange changes
+  useEffect(() => {
+    const { startDate, endDate } = dateRange[0];
+    if (startDate && endDate) {
+      fetchVisitorsForRange(startDate, endDate);
+    }
+    // eslint-disable-next-line
+  }, [dateRange]);
+
   useEffect(() => {
     // Calculate stats from all visitors
     const totalVisitors = visitors.length;
@@ -429,6 +477,30 @@ const LobbyAttendantDashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Date Range Picker */}
+      <div className="flex items-center space-x-4 mb-4">
+        <button
+          onClick={() => setShowDatePicker(!showDatePicker)}
+          className="inline-flex items-center px-4 py-2 border border-blue-500 shadow-sm text-sm font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        >
+          {showDatePicker ? 'Hide' : 'Select'} Date Range
+        </button>
+        <span className="text-gray-700 dark:text-gray-200">
+          Showing: <b>{format(dateRange[0].startDate, 'MMM d, yyyy')}</b> to <b>{format(dateRange[0].endDate, 'MMM d, yyyy')}</b>
+        </span>
+      </div>
+      {showDatePicker && (
+        <div className="mb-4">
+          <DateRange
+            editableDateInputs={true}
+            onChange={(item: any) => setDateRange([item.selection])}
+            moveRangeOnFirstSelection={false}
+            ranges={dateRange}
+            maxDate={new Date()}
+            className="shadow-lg rounded-lg"
+          />
+        </div>
+      )}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Lobby Attendant Dashboard</h1>

@@ -1026,11 +1026,34 @@ class TodayAllVisitsAPIView(APIView):
     permission_classes = [IsAuthenticated, IsLobbyAttendant]
 
     def get(self, request):
-        today = timezone.now().date()
-        visits = VisitRequest.objects.filter(scheduled_time__date=today)
+        from datetime import datetime, timedelta
+        from django.utils import timezone
+        import pytz
+
+        # Get query parameters
+        start_date_str = request.query_params.get('start_date')
+        end_date_str = request.query_params.get('end_date')
+
+        # Default to current week (Monday to Sunday)
+        now = timezone.now()
+        # Ensure aware datetime
+        if timezone.is_naive(now):
+            now = timezone.make_aware(now, timezone.get_current_timezone())
+        start_of_week = now - timedelta(days=now.weekday())
+        start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_of_week = start_of_week + timedelta(days=6, hours=23, minutes=59, seconds=59)
+
+        # Parse custom dates if provided
+        if start_date_str:
+            start_of_week = datetime.strptime(start_date_str, '%Y-%m-%d')
+            start_of_week = timezone.make_aware(start_of_week, timezone.get_current_timezone())
+        if end_date_str:
+            end_of_week = datetime.strptime(end_date_str, '%Y-%m-%d') + timedelta(days=1)
+            end_of_week = timezone.make_aware(end_of_week, timezone.get_current_timezone())
+
+        visits = VisitRequest.objects.filter(scheduled_time__gte=start_of_week, scheduled_time__lt=end_of_week)
         data = []
         for visit in visits:
-            # Try to get the VisitLog, or None if it doesn't exist
             try:
                 visitlog = visit.visitlog
             except Exception:
