@@ -478,6 +478,7 @@ class TodayVisitorsAPIView(APIView):
     
     def get(self, request):
         """Get all approved visitors for today"""
+        print("DEBUG: TodayVisitorsAPIView.get() called")
         today = timezone.now().date()
         
         # Debug: Print today's date
@@ -491,10 +492,10 @@ class TodayVisitorsAPIView(APIView):
         print(f"Today start: {today_start}")
         print(f"Today end: {today_end}")
         
-        # Get all approved visits for today (including both today and tomorrow to handle timezone edge cases)
+        # Get all approved visits for today (use range for robust timezone handling)
         today_visits = VisitRequest.objects.filter(
             status='approved',
-            scheduled_time__date__in=[today, today + timedelta(days=1)],
+            scheduled_time__range=(today_start, today_end),
             visitor__isnull=False
         ).select_related('visitor', 'employee')
         
@@ -535,6 +536,8 @@ class TodayVisitorsAPIView(APIView):
                 'check_out_time': check_out_time,
             })
         
+        print(f"DEBUG: Returning {len(visitors_data)} visitors")
+        print(f"DEBUG: Response data: {visitors_data}")
         return Response(visitors_data)
 
 

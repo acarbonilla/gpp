@@ -63,6 +63,8 @@ const LobbyAttendant: React.FC = () => {
       });
 
       console.log('Raw API response:', response.data);
+      console.log('Response data type:', typeof response.data);
+      console.log('Response data length:', Array.isArray(response.data) ? response.data.length : 'Not an array');
       setVisitors(response.data);
       setError(null);
     } catch (err: any) {
