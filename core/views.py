@@ -392,6 +392,73 @@ class IsLobbyAttendant(BasePermission):
         return request.user and request.user.is_authenticated and request.user.groups.filter(name='lobby_attendant').exists()
 
 
+class ConvertScheduledToWalkInAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsLobbyAttendant]
+    
+    def post(self, request, visit_id):
+        """Convert a scheduled visit to a walk-in visit"""
+        try:
+            # Get the scheduled visit
+            visit = VisitRequest.objects.get(pk=visit_id)
+            
+            # Validate the visit can be converted
+            if visit.status != 'approved':
+                return Response({
+                    'error': 'Only approved visits can be converted to walk-ins.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            if visit.visit_type == 'walkin':
+                return Response({
+                    'error': 'This visit is already a walk-in visit.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            if visit.is_checked_in:
+                return Response({
+                    'error': 'Cannot convert a visit that has already been checked in.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Get updated purpose and host information
+            host_name = request.data.get('host_name', '').strip()
+            purpose = request.data.get('purpose', '').strip()
+            
+            if not host_name:
+                return Response({
+                    'error': 'Person to visit is required.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Update the visit to walk-in type
+            visit.visit_type = 'walkin'
+            
+            # Update the purpose with host information
+            if purpose and purpose != visit.purpose:
+                full_purpose = f"{purpose} - Visiting {host_name}"
+            else:
+                full_purpose = f"Walk-in visit to see {host_name}"
+            
+            visit.purpose = full_purpose
+            visit.scheduled_time = timezone.now()  # Update to current time
+            visit.save()
+            
+            return Response({
+                'message': 'Scheduled visit successfully converted to walk-in.',
+                'visit_id': visit.id,
+                'visitor_name': visit.visitor.full_name if visit.visitor else 'Unknown',
+                'host_name': host_name,
+                'purpose': visit.purpose,
+                'converted_at': visit.scheduled_time,
+            }, status=status.HTTP_200_OK)
+            
+        except VisitRequest.DoesNotExist:
+            return Response({
+                'error': 'Visit not found.'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            print(f"Error converting scheduled visit to walk-in: {e}")
+            return Response({
+                'error': 'Failed to convert scheduled visit to walk-in.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 class CreateWalkInVisitAPIView(APIView):
     permission_classes = [IsAuthenticated, IsLobbyAttendant]
     
@@ -407,8 +474,11 @@ class CreateWalkInVisitAPIView(APIView):
             }
             
             # Extract visit data
+            host_name = request.data.get('host_name', '').strip()
+            purpose = request.data.get('purpose', '').strip()
+            
             visit_data = {
-                'purpose': request.data.get('purpose', 'Walk-in visit'),  # Default purpose for walk-ins
+                'purpose': purpose if purpose else 'Walk-in visit',
                 'scheduled_time': request.data.get('scheduled_time'),
                 'visit_type': 'walkin',
             }
@@ -417,6 +487,11 @@ class CreateWalkInVisitAPIView(APIView):
             if not visitor_data['full_name'] or not visitor_data['email']:
                 return Response({
                     'error': 'Visitor name and email are required.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            if not host_name:
+                return Response({
+                    'error': 'Person to visit is required.'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
             # Create visitor
@@ -440,10 +515,15 @@ class CreateWalkInVisitAPIView(APIView):
             else:
                 scheduled_time = timezone.now()
             
+            # Create the purpose with host information
+            full_purpose = f"Walk-in visit to see {host_name}"
+            if purpose and purpose != 'Walk-in visit':
+                full_purpose = f"{purpose} - Visiting {host_name}"
+            
             visit_request = VisitRequest.objects.create(
-                employee=request.user,  # Lobby attendant becomes the host
+                employee=request.user,  # Lobby attendant becomes the host for tracking
                 visitor=visitor,
-                purpose=visit_data['purpose'],
+                purpose=full_purpose,
                 scheduled_time=scheduled_time,
                 status='approved',  # Walk-ins are approved immediately
                 visit_type='walkin'
@@ -454,6 +534,7 @@ class CreateWalkInVisitAPIView(APIView):
                 'visit_id': visit_request.id,
                 'visitor_id': visitor.id,
                 'visitor_name': visitor.full_name,
+                'host_name': host_name,
                 'purpose': visit_request.purpose,
                 'scheduled_time': visit_request.scheduled_time,
             }, status=status.HTTP_201_CREATED)
@@ -527,18 +608,46 @@ class VisitLogCheckInAPIView(APIView):
             return Response({'error': 'Visitor ID is required.'}, status=400)
         
         try:
-            # Find the approved visit for today or tomorrow with this visitor
+            # Find the approved visit for this visitor
+            # For walk-ins, we need to be more flexible with the time range
             today = timezone.now().date()
             from datetime import timedelta
+            
+            # First, try to find any approved visit for this visitor from the last 24 hours
+            # This handles walk-ins that might have timezone issues
+            yesterday = today - timedelta(days=1)
+            tomorrow = today + timedelta(days=1)
+            
+            # Debug logging
+            print(f"Looking for visitor_id: {visitor_id}")
+            print(f"Date range: {yesterday} to {tomorrow}")
+            
             visit = VisitRequest.objects.filter(
                 visitor_id=visitor_id,
                 status='approved',
-                scheduled_time__date__in=[today, today + timedelta(days=1)]
-            ).order_by('scheduled_time').first()
+                scheduled_time__date__gte=yesterday,
+                scheduled_time__date__lte=tomorrow
+            ).order_by('-scheduled_time').first()  # Get the most recent one
+            
+            # If not found with date filtering, try to find any approved visit for this visitor
             if not visit:
-                return Response({'error': 'No approved visit found for this visitor today.'}, status=404)
+                print(f"No visit found with date filtering, trying broader search...")
+                visit = VisitRequest.objects.filter(
+                    visitor_id=visitor_id,
+                    status='approved'
+                ).order_by('-scheduled_time').first()
+            
+            if not visit:
+                # Debug: Let's see what visits exist for this visitor
+                all_visits = VisitRequest.objects.filter(visitor_id=visitor_id)
+                print(f"All visits for visitor {visitor_id}: {list(all_visits.values('id', 'status', 'scheduled_time', 'visit_type'))}")
+                
+                return Response({'error': 'No approved visit found for this visitor.'}, status=404)
+            else:
+                print(f"Found visit: {visit.id}, scheduled_time: {visit.scheduled_time}, visit_type: {visit.visit_type}")
+                
         except VisitRequest.DoesNotExist:
-            return Response({'error': 'No approved visit found for this visitor today.'}, status=404)
+            return Response({'error': 'No approved visit found for this visitor.'}, status=404)
 
         # Check if already checked in
         if VisitLog.objects.filter(visit_request=visit, check_in_time__isnull=False).exists():
@@ -568,6 +677,7 @@ class VisitLogCheckInAPIView(APIView):
             'visit': {
                 'purpose': visit.purpose,
                 'scheduled_time': visit.scheduled_time,
+                'visit_type': visit.visit_type,
             },
             'check_in_time': visit_log.check_in_time
         })

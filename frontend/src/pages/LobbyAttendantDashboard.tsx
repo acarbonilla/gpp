@@ -286,8 +286,16 @@ const LobbyAttendantDashboard: React.FC = () => {
           'Content-Type': 'application/json',
         },
       });
-      setContextVisitors(response.data);
-      console.log('Dashboard visitors:', response.data);
+      
+      // Sort visitors by most recent date and time
+      const sortedVisitors = response.data.sort((a: any, b: any) => {
+        const dateA = new Date(a.scheduled_time);
+        const dateB = new Date(b.scheduled_time);
+        return dateB.getTime() - dateA.getTime(); // Most recent first
+      });
+      
+      setContextVisitors(sortedVisitors);
+      console.log('Dashboard visitors:', sortedVisitors);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to fetch dashboard visits');
     } finally {
@@ -333,7 +341,7 @@ const LobbyAttendantDashboard: React.FC = () => {
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
       link.setAttribute('href', url);
-      link.setAttribute('download', `todays_visitors_${today}.csv`);
+      link.setAttribute('download', `weekly_visitors_${today}.csv`);
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
@@ -362,7 +370,15 @@ const LobbyAttendantDashboard: React.FC = () => {
           'Content-Type': 'application/json',
         },
       });
-      setContextVisitors(response.data);
+      
+      // Sort visitors by most recent date and time
+      const sortedVisitors = response.data.sort((a: any, b: any) => {
+        const dateA = new Date(a.scheduled_time);
+        const dateB = new Date(b.scheduled_time);
+        return dateB.getTime() - dateA.getTime(); // Most recent first
+      });
+      
+      setContextVisitors(sortedVisitors);
       setError(null);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to fetch dashboard visits');
@@ -448,8 +464,8 @@ const LobbyAttendantDashboard: React.FC = () => {
 
   const quickActions = [
     {
-      name: 'Manage Today\'s Visitors',
-      description: 'View and manage visitor check-ins and check-outs',
+      name: 'Manage Weekly Records',
+      description: 'View and manage visitor check-ins and check-outs for the week',
       href: '/lobby',
       icon: UserGroupIcon,
       color: 'bg-blue-600 hover:bg-blue-700',
@@ -501,23 +517,23 @@ const LobbyAttendantDashboard: React.FC = () => {
           />
         </div>
       )}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center space-y-4 lg:space-y-0">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Lobby Attendant Dashboard</h1>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">Welcome! Manage visitor flow and check-ins for today</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">Lobby Attendant Dashboard</h1>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">Welcome! Manage visitor flow and check-ins for the week</p>
         </div>
-        <div className="flex items-center space-x-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-2 sm:space-y-0 sm:space-x-2 lg:space-x-4">
           <ThemeToggle />
           <button
             onClick={downloadTodaysVisitorsCSV}
             disabled={downloading}
-            className="inline-flex items-center px-4 py-2 border border-blue-500 shadow-sm text-sm font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+            className="inline-flex items-center px-3 sm:px-4 py-2 border border-blue-500 shadow-sm text-xs sm:text-sm font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-colors duration-200"
           >
-            {downloading ? 'Downloading...' : 'Download Today\'s Visitors (CSV)'}
+            {downloading ? 'Downloading...' : 'Download Weekly Records (CSV)'}
           </button>
           <button
             onClick={() => setShowAnalytics(!showAnalytics)}
-            className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            className="inline-flex items-center px-3 sm:px-4 py-2 border border-gray-300 shadow-sm text-xs sm:text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
           >
             {showAnalytics ? 'Hide Analytics' : 'Show Analytics'}
           </button>
@@ -534,8 +550,8 @@ const LobbyAttendantDashboard: React.FC = () => {
             <dl>
               <dt className="text-sm font-medium text-blue-900 truncate flex items-center gap-1">
                 Total Visitors
-                <Tooltip text="Total number of visitors scheduled for today">
-                  <InformationCircleIcon className="h-4 w-4 text-blue-600 cursor-help" title="Total number of visitors scheduled for today" />
+                <Tooltip text="Total number of visitors for the selected period">
+                  <InformationCircleIcon className="h-4 w-4 text-blue-600 cursor-help" title="Total number of visitors for the selected period" />
                 </Tooltip>
               </dt>
               <dd className="text-2xl font-bold text-blue-900">
@@ -572,8 +588,8 @@ const LobbyAttendantDashboard: React.FC = () => {
             <dl>
               <dt className="text-sm font-medium text-yellow-900 truncate flex items-center gap-1">
                 Pending
-                <Tooltip text="Visitors who are approved but haven't checked in yet">
-                  <InformationCircleIcon className="h-4 w-4 text-yellow-600 cursor-help" title="Visitors who are approved but haven't checked in yet" />
+                <Tooltip text="Visitors who are approved but haven't checked in yet for the selected period">
+                  <InformationCircleIcon className="h-4 w-4 text-yellow-600 cursor-help" title="Visitors who are approved but haven't checked in yet for the selected period" />
                 </Tooltip>
               </dt>
               <dd className="text-2xl font-bold text-yellow-900">
@@ -610,8 +626,8 @@ const LobbyAttendantDashboard: React.FC = () => {
             <dl>
               <dt className="text-sm font-medium text-orange-900 truncate flex items-center gap-1">
                 No Show
-                <Tooltip text="Visitors who did not arrive for their scheduled visit (15+ min late)">
-                  <InformationCircleIcon className="h-4 w-4 text-orange-600 cursor-help" title="Visitors who did not arrive for their scheduled visit (15+ min late)" />
+                <Tooltip text="Visitors who did not arrive for their scheduled visit (15+ min late) in the selected period">
+                  <InformationCircleIcon className="h-4 w-4 text-orange-600 cursor-help" title="Visitors who did not arrive for their scheduled visit (15+ min late) in the selected period" />
                 </Tooltip>
               </dt>
               <dd className="text-2xl font-bold text-orange-900">
@@ -661,7 +677,7 @@ const LobbyAttendantDashboard: React.FC = () => {
       {/* Search and Filters */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-medium text-gray-900 dark:text-white">Today's Visitors</h2>
+          <h2 className="text-lg font-medium text-gray-900 dark:text-white">Weekly Records</h2>
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setShowBulkActions(!showBulkActions)}
@@ -682,7 +698,7 @@ const LobbyAttendantDashboard: React.FC = () => {
             </div>
             <input
               type="text"
-              placeholder="Search visitors, employees, or purpose..."
+              placeholder="Search weekly records by visitors, employees, or purpose..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               onFocus={() => setSearchFocused(true)}
@@ -769,7 +785,7 @@ const LobbyAttendantDashboard: React.FC = () => {
           <div className="space-y-3">
             {paginatedVisitors.length === 0 ? (
               <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                {searchTerm || statusFilter !== 'all' ? 'No visitors found matching your criteria.' : 'No visitors for today.'}
+                {searchTerm || statusFilter !== 'all' ? 'No records found matching your criteria.' : 'No visitor records for the selected period.'}
               </div>
             ) : (
               paginatedVisitors.map((visitor) => (
@@ -791,7 +807,7 @@ const LobbyAttendantDashboard: React.FC = () => {
           <div className="mt-6 flex items-center justify-between">
             <div className="flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300">
               <span>
-                Showing {startIndex} to {endIndex} of {filteredVisitors.length} visitors
+                Showing {startIndex} to {endIndex} of {filteredVisitors.length} records
               </span>
               <span className="text-gray-400">|</span>
               <label htmlFor="page-size" className="flex items-center space-x-1">
@@ -831,35 +847,35 @@ const LobbyAttendantDashboard: React.FC = () => {
                 <ChevronLeftIcon className="h-4 w-4" />
               </button>
 
-                             {/* Page Numbers */}
-               <div className="flex items-center space-x-1">
-                 {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                   let pageNum: number;
-                   if (totalPages <= 5) {
-                     pageNum = i + 1;
-                   } else if (currentPage <= 3) {
-                     pageNum = i + 1;
-                   } else if (currentPage >= totalPages - 2) {
-                     pageNum = totalPages - 4 + i;
-                   } else {
-                     pageNum = currentPage - 2 + i;
-                   }
+              {/* Page Numbers */}
+              <div className="flex items-center space-x-1">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum: number;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = currentPage - 2 + i;
+                  }
 
-                   return (
-                     <button
-                       key={pageNum}
-                       onClick={() => handlePageChange(pageNum)}
-                       className={`inline-flex items-center px-3 py-1 border text-sm font-medium rounded-md ${
-                         currentPage === pageNum
-                           ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-900 dark:text-blue-200'
-                           : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:hover:bg-gray-600'
-                       }`}
-                     >
-                       {pageNum}
-                     </button>
-                   );
-                 })}
-               </div>
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => handlePageChange(pageNum)}
+                      className={`inline-flex items-center px-3 py-1 border text-sm font-medium rounded-md ${
+                        currentPage === pageNum
+                          ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-900 dark:text-blue-200'
+                          : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:hover:bg-gray-600'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
 
               {/* Next Page */}
               <button
@@ -887,4 +903,4 @@ const LobbyAttendantDashboard: React.FC = () => {
   );
 };
 
-export default LobbyAttendantDashboard; 
+export default LobbyAttendantDashboard;

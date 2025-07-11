@@ -17,6 +17,7 @@ import Reports from './pages/Reports';
 import { useAuth } from './components/AuthContext';
 import { RefreshProvider } from './components/RefreshContext';
 import { VisitorProvider } from './components/VisitorContext';
+import MobileNavTest from './components/MobileNavTest';
 
 // Role-based Dashboard component
 const RoleBasedDashboard: React.FC = () => {
@@ -52,7 +53,7 @@ function App() {
         <Router>
           <div className="min-h-screen bg-gray-50">
             <Navbar />
-            <main className="container mx-auto px-4 py-8">
+            <main className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
               <Routes>
                 <Route path="/login" element={<Login />} />
                 <Route path="/visitor-form/:token" element={<VisitorForm />} />
@@ -99,6 +100,8 @@ function App() {
                 } />
               </Routes>
             </main>
+            {/* Mobile Navigation Test Component - Remove after testing */}
+            <MobileNavTest />
           </div>
         </Router>
       </VisitorProvider>

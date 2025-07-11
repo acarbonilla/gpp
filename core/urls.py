@@ -15,6 +15,7 @@ from .views import (
     TodayAllVisitsAPIView,  # <-- add
     VisitLogCheckOutAPIView,
     CreateWalkInVisitAPIView,
+    ConvertScheduledToWalkInAPIView,
     MyVisitorsAPIView,
     DashboardMetricsView,
     RecentActivityView,
@@ -50,6 +51,7 @@ urlpatterns = [
     path('lobby/checkin/', VisitLogCheckInAPIView.as_view(), name='visit-log-checkin'),
     path('lobby/checkout/', VisitLogCheckOutAPIView.as_view(), name='visit-log-checkout'),
     path('lobby/walkin/', CreateWalkInVisitAPIView.as_view(), name='create-walkin-visit'),
+    path('lobby/convert-to-walkin/<int:visit_id>/', ConvertScheduledToWalkInAPIView.as_view(), name='convert-to-walkin'),
     path('my-visitors/', MyVisitorsAPIView.as_view(), name='my-visitors'),
     path('dashboard-metrics/', DashboardMetricsView.as_view(), name='dashboard-metrics'),
     path('recent-activities/', RecentActivityView.as_view(), name='recent-activities'),

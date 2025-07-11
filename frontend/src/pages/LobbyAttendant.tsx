@@ -415,6 +415,18 @@ const LobbyAttendant: React.FC = () => {
                                 Checked Out
                               </span>
                             )}
+                            {/* Show Convert to Walk-In button for scheduled visits that haven't been checked in */}
+                            {!visitor.is_checked_in && visitor.visit_type === 'scheduled' && (
+                              <button
+                                onClick={() => navigate(`/walkin?convert_visit=${visitor.visit_id}`)}
+                                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                              >
+                                <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16l-4-4m0 0l4-4m-4 4h18" />
+                                </svg>
+                                Convert to Walk-In
+                              </button>
+                            )}
                             {/* Show Mark No Show button if visitor is approved, not checked in, and late */}
                             {shouldShowNoShowButton(visitor) && (
                               <button

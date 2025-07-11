@@ -190,6 +190,9 @@ const TouchOptimizedCard: React.FC<TouchOptimizedCardProps> = ({
                 <p className="text-xs text-gray-400">
                   Scheduled: {new Date(visitor.scheduled_time).toLocaleTimeString()}
                 </p>
+                <p className="text-xs text-gray-400">
+                  {new Date(visitor.scheduled_time).toLocaleDateString()}
+                </p>
               </div>
             </div>
           </div>

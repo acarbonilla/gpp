@@ -72,6 +72,31 @@ const Navbar: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [userDropdownOpen]);
 
+  // Close mobile menu when screen size changes
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 640) {
+        setMobileMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Prevent body scroll when mobile menu is open
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      document.body.classList.add('mobile-menu-open');
+    } else {
+      document.body.classList.remove('mobile-menu-open');
+    }
+
+    return () => {
+      document.body.classList.remove('mobile-menu-open');
+    };
+  }, [mobileMenuOpen]);
+
   return (
     <nav className="relative z-50 w-full h-20 min-h-16 flex items-center shadow-lg border-b-4 border-blue-900 overflow-visible bg-gradient-to-r from-blue-900 via-indigo-900 to-gray-900 animate-gradient-x">
       {/* Animated border glow */}
@@ -99,7 +124,7 @@ const Navbar: React.FC = () => {
           <div className="flex sm:hidden">
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="inline-flex items-center justify-center p-2 rounded-md text-blue-600 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+              className="mobile-nav-button inline-flex items-center justify-center p-2 rounded-md text-blue-200 hover:text-blue-400 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition-colors duration-200"
               aria-label="Toggle navigation menu"
             >
               {mobileMenuOpen ? (
@@ -191,82 +216,116 @@ const Navbar: React.FC = () => {
           )}
         </div>
       </div>
+      
       {/* Mobile menu overlay */}
       {mobileMenuOpen && (
-        <div className="sm:hidden fixed inset-0 z-50 bg-black bg-opacity-30" onClick={() => setMobileMenuOpen(false)}></div>
+        <div 
+          className="mobile-menu-overlay sm:hidden fixed inset-0 z-[9998] bg-black bg-opacity-50 backdrop-blur-sm" 
+          onClick={() => setMobileMenuOpen(false)}
+        ></div>
       )}
+      
       {/* Mobile menu panel */}
-      <div className={`sm:hidden fixed top-0 left-0 w-4/5 max-w-xs h-full bg-white shadow-2xl z-50 transform transition-transform duration-300 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`} style={{zIndex: 100}}>
-        <div className="flex items-center justify-between px-4 py-4 border-b border-blue-100">
+      <div 
+        className={`mobile-menu-panel sm:hidden fixed top-0 left-0 w-[85%] max-w-[320px] h-full bg-white shadow-2xl z-[9999] transform transition-transform duration-300 ease-in-out ${
+          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        {/* Mobile menu header */}
+        <div className="flex items-center justify-between px-4 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
           <div className="flex items-center group">
-            <BuildingOfficeIcon className="h-7 w-7 text-blue-200 group-hover:text-blue-400 transition-all duration-300" />
-            <span className="ml-2 text-lg font-bold bg-gradient-to-r from-blue-200 via-blue-100 to-indigo-200 bg-clip-text text-transparent">GatePassPro</span>
+            <BuildingOfficeIcon className="h-7 w-7 text-blue-600 group-hover:text-blue-700 transition-all duration-300" />
+            <span className="ml-2 text-lg font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+              GatePassPro
+            </span>
           </div>
-          <button onClick={() => setMobileMenuOpen(false)} className="p-2 rounded-md text-blue-600 hover:text-blue-800 focus:outline-none">
+          <button 
+            onClick={() => setMobileMenuOpen(false)} 
+            className="p-2 rounded-md text-gray-600 hover:text-gray-800 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200"
+          >
             <XMarkIcon className="h-6 w-6" />
           </button>
         </div>
-        <div className="flex flex-col space-y-2 px-4 py-6">
-          {isAuthenticated && navItems.map((item) => {
-            const isActive = location.pathname === item.href;
-            return (
+        
+        {/* Mobile menu content */}
+        <div className="flex flex-col h-full">
+          {/* Navigation items */}
+          <div className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
+            {isAuthenticated && navItems.map((item) => {
+              const isActive = location.pathname === item.href;
+              return (
+                <Link
+                  key={item.name}
+                  to={item.href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`mobile-menu-item flex items-center px-4 py-3 rounded-lg text-base font-medium transition-all duration-200 ${
+                    isActive 
+                      ? 'text-white bg-gradient-to-r from-blue-600 to-indigo-600 shadow-lg' 
+                      : 'text-gray-700 hover:text-blue-700 hover:bg-blue-50 active:bg-blue-100'
+                  }`}
+                >
+                  <item.icon className={`h-5 w-5 mr-3 ${
+                    isActive ? 'text-white' : 'text-gray-500'
+                  }`} />
+                  {item.name}
+                </Link>
+              );
+            })}
+          </div>
+          
+          {/* Mobile menu footer */}
+          <div className="px-4 py-4 border-t border-gray-200 bg-gray-50">
+            {isAuthenticated ? (
+              <div className="space-y-3">
+                {/* Notification System for Mobile */}
+                <div className="flex items-center justify-center">
+                  <NotificationSystem 
+                    visitors={visitors}
+                    onNotificationClick={(notification) => {
+                      console.log('Notification clicked:', notification);
+                      setMobileMenuOpen(false);
+                    }}
+                  />
+                </div>
+                
+                {/* User info */}
+                <div className="flex items-center space-x-3 bg-white rounded-lg px-3 py-2 border border-gray-200 shadow-sm">
+                  <UserIcon className="h-5 w-5 text-blue-600" />
+                  <span className="text-sm font-medium text-gray-700 truncate">
+                    {user?.username}
+                  </span>
+                </div>
+                
+                {/* Logout button */}
+                <button
+                  onClick={handleLogout}
+                  className="w-full flex items-center justify-center px-4 py-3 border border-red-200 text-base font-medium rounded-lg text-red-600 hover:text-white hover:bg-red-600 hover:border-red-600 transition-all duration-200 shadow-sm"
+                >
+                  <ArrowRightOnRectangleIcon className="h-5 w-5 mr-2" />
+                  Logout
+                </button>
+              </div>
+            ) : (
               <Link
-                key={item.name}
-                to={item.href}
+                to="/login"
                 onClick={() => setMobileMenuOpen(false)}
-                className={`flex items-center px-3 py-3 rounded-lg text-base font-medium transition-all duration-200 ${
-                  isActive ? 'text-white bg-gradient-to-r from-blue-500 to-indigo-600 shadow' : 'text-gray-700 hover:text-blue-700 hover:bg-blue-50'
-                }`}
+                className="w-full flex items-center justify-center px-4 py-3 border border-transparent text-base font-medium rounded-lg text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg"
               >
-                <item.icon className="h-5 w-5 mr-3" />
-                {item.name}
+                <UserIcon className="h-5 w-5 mr-2" />
+                Sign In
               </Link>
-            );
-          })}
-          {isAuthenticated ? (
-            <div className="flex flex-col space-y-2 mt-4">
-              {/* Notification System for Mobile */}
-              <div className="flex items-center justify-center">
-                <NotificationSystem 
-                  visitors={visitors}
-                  onNotificationClick={(notification) => {
-                    console.log('Notification clicked:', notification);
-                    setMobileMenuOpen(false);
-                  }}
-                />
-              </div>
-              
-              <div className="flex items-center space-x-2 bg-white/70 backdrop-blur-sm rounded-lg px-3 py-2 border border-blue-100">
-                <UserIcon className="h-5 w-5 text-blue-500" />
-                <span className="text-base font-medium text-gray-700">{user?.username}</span>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="flex items-center px-3 py-2 border border-gray-200 text-base font-medium rounded-lg text-gray-600 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-all duration-200"
-              >
-                <ArrowRightOnRectangleIcon className="h-5 w-5 mr-2" />
-                Logout
-              </button>
-            </div>
-          ) : (
-            <Link
-              to="/login"
-              onClick={() => setMobileMenuOpen(false)}
-              className="flex items-center px-3 py-3 border border-transparent text-base font-medium rounded-lg text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow"
-            >
-              <UserIcon className="h-5 w-5 mr-2" />
-              Sign In
-            </Link>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </nav>
   );
 };
 
-export default Navbar; 
+export default Navbar;
 
-<style>{`
+// Add CSS styles for better mobile support
+const mobileStyles = `
 @keyframes gradient-x {
   0%, 100% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
@@ -275,4 +334,50 @@ export default Navbar;
   background-size: 200% 200%;
   animation: gradient-x 8s ease-in-out infinite;
 }
-`}</style> 
+
+/* Mobile menu improvements */
+@media (max-width: 375px) {
+  .mobile-menu-panel {
+    width: 90% !important;
+    max-width: 300px !important;
+  }
+}
+
+/* Ensure mobile menu is always on top */
+.mobile-menu-overlay {
+  z-index: 9998 !important;
+}
+
+.mobile-menu-panel {
+  z-index: 9999 !important;
+}
+
+/* Touch-friendly mobile buttons */
+@media (max-width: 640px) {
+  .mobile-nav-button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  .mobile-menu-item {
+    min-height: 48px;
+    padding: 12px 16px;
+  }
+}
+
+/* Prevent body scroll when mobile menu is open */
+body.mobile-menu-open {
+  overflow: hidden;
+}
+`;
+
+// Inject styles
+if (typeof document !== 'undefined') {
+  const styleId = 'navbar-mobile-styles';
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = mobileStyles;
+    document.head.appendChild(style);
+  }
+} 
