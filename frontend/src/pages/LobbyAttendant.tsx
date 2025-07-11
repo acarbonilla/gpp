@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axiosInstance from '../api/axiosInstance';
 import { useNavigate } from 'react-router-dom';
 import { useRefresh } from '../components/RefreshContext';
+import { useVisitors } from '../components/VisitorContext';
 import { ChevronLeftIcon, ChevronRightIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 
 interface Visitor {
@@ -23,6 +24,7 @@ interface Visitor {
 const LobbyAttendant: React.FC = () => {
   const navigate = useNavigate();
   const { refreshDashboard } = useRefresh();
+  const { setVisitors: setContextVisitors } = useVisitors();
   const [visitors, setVisitors] = useState<Visitor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +40,9 @@ const LobbyAttendant: React.FC = () => {
 
   // Add state for marking no show
   const [markingNoShow, setMarkingNoShow] = useState<number | null>(null);
+
+  // Add status filter state
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
   // Get auth token from localStorage
   const getAuthToken = () => {
@@ -65,12 +70,43 @@ const LobbyAttendant: React.FC = () => {
       console.log('Response data type:', typeof response.data);
       console.log('Response data length:', Array.isArray(response.data) ? response.data.length : 'Not an array');
       setVisitors(response.data);
+      
+      // Populate visitor context for notifications
+      setContextVisitors(response.data);
+      
       setError(null);
     } catch (err: any) {
       console.error('Error fetching visitors:', err);
       setError(err.response?.data?.error || 'Failed to fetch today\'s visitors');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Fetch all visits for notifications (like dashboard)
+  const fetchAllVisitsForNotifications = async () => {
+    try {
+      const token = getAuthToken();
+      if (!token) {
+        return;
+      }
+      const response = await axiosInstance.get('/api/lobby/today-all-visits/', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      // Sort visitors by most recent date and time
+      const sortedVisitors = response.data.sort((a: any, b: any) => {
+        const dateA = new Date(a.scheduled_time);
+        const dateB = new Date(b.scheduled_time);
+        return dateB.getTime() - dateA.getTime(); // Most recent first
+      });
+      
+      setContextVisitors(sortedVisitors);
+    } catch (err: any) {
+      console.error('Error fetching all visits for notifications:', err);
     }
   };
 
@@ -191,6 +227,18 @@ const LobbyAttendant: React.FC = () => {
 
   useEffect(() => {
     fetchTodayVisitors();
+    fetchAllVisitsForNotifications();
+  }, []);
+
+  // Add auto-refresh every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchTodayVisitors();
+      // Also fetch all visits for notifications (like dashboard does)
+      fetchAllVisitsForNotifications();
+    }, 30000); // 30 seconds
+    
+    return () => clearInterval(interval);
   }, []);
 
   // Show approved and not expired visitors
@@ -218,19 +266,42 @@ const LobbyAttendant: React.FC = () => {
     
     return visitorName.includes(searchLower) || hostName.includes(searchLower);
   });
+
+  // Apply status filter
+  const statusFilteredVisitors = filteredVisitors.filter((visitor) => {
+    switch (statusFilter) {
+      case 'all':
+        return true;
+      case 'pending':
+        return !visitor.is_checked_in && visitor.status === 'approved';
+      case 'checked-in':
+        return visitor.is_checked_in && !visitor.is_checked_out;
+      case 'checked-out':
+        return visitor.is_checked_out;
+      case 'no-show':
+        return visitor.status === 'no_show';
+      default:
+        return true;
+    }
+  });
   
   console.log('Filtered visitors:', filteredVisitors);
 
   // Calculate pagination
-  const totalPages = Math.ceil(filteredVisitors.length / pageSize);
+  const totalPages = Math.ceil(statusFilteredVisitors.length / pageSize);
   const startIndex = (page - 1) * pageSize;
   const endIndex = startIndex + pageSize;
-  const paginatedVisitors = filteredVisitors.slice(startIndex, endIndex);
+  const paginatedVisitors = statusFilteredVisitors.slice(startIndex, endIndex);
 
   // Reset page when search term changes
   useEffect(() => {
     setPage(1);
   }, [searchTerm]);
+
+  // Reset page when status filter changes
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter]);
 
   if (loading) {
     return (
@@ -272,7 +343,12 @@ const LobbyAttendant: React.FC = () => {
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-lg leading-6 font-medium text-gray-900">
-                  Today's Visitors ({filteredVisitors.length})
+                  Today's Visitors ({statusFilteredVisitors.length})
+                  {statusFilter !== 'all' && (
+                    <span className="ml-2 text-sm font-normal text-gray-500">
+                      • Filtered by: {statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}
+                    </span>
+                  )}
                 </h3>
                 <p className="mt-1 max-w-2xl text-sm text-gray-500">
                   {new Date().toLocaleDateString()}
@@ -289,7 +365,10 @@ const LobbyAttendant: React.FC = () => {
                   Create Walk-In
                 </button>
                 <button
-                  onClick={fetchTodayVisitors}
+                  onClick={() => {
+                    fetchTodayVisitors();
+                    fetchAllVisitsForNotifications();
+                  }}
                   className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                 >
                   <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -327,6 +406,60 @@ const LobbyAttendant: React.FC = () => {
                 )}
               </div>
             </div>
+
+            {/* Filter Buttons */}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                onClick={() => setStatusFilter('all')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                  statusFilter === 'all'
+                    ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                    : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200'
+                }`}
+              >
+                All ({approvedVisitors.length})
+              </button>
+              <button
+                onClick={() => setStatusFilter('pending')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                  statusFilter === 'pending'
+                    ? 'bg-yellow-100 text-yellow-800 border border-yellow-200'
+                    : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200'
+                }`}
+              >
+                Pending ({approvedVisitors.filter(v => !v.is_checked_in && v.status === 'approved').length})
+              </button>
+              <button
+                onClick={() => setStatusFilter('checked-in')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                  statusFilter === 'checked-in'
+                    ? 'bg-green-100 text-green-800 border border-green-200'
+                    : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200'
+                }`}
+              >
+                Checked In ({approvedVisitors.filter(v => v.is_checked_in && !v.is_checked_out).length})
+              </button>
+              <button
+                onClick={() => setStatusFilter('checked-out')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                  statusFilter === 'checked-out'
+                    ? 'bg-gray-100 text-gray-800 border border-gray-200'
+                    : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200'
+                }`}
+              >
+                Checked Out ({approvedVisitors.filter(v => v.is_checked_out).length})
+              </button>
+              <button
+                onClick={() => setStatusFilter('no-show')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                  statusFilter === 'no-show'
+                    ? 'bg-orange-100 text-orange-800 border border-orange-200'
+                    : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200'
+                }`}
+              >
+                No Show ({approvedVisitors.filter(v => v.status === 'no_show').length})
+              </button>
+            </div>
           </div>
 
           {paginatedVisitors.length === 0 ? (
@@ -335,11 +468,13 @@ const LobbyAttendant: React.FC = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
               </svg>
               <h3 className="mt-2 text-sm font-medium text-gray-900">
-                {searchTerm ? 'No visitors found' : 'No visitors today'}
+                {searchTerm || statusFilter !== 'all' ? 'No visitors found' : 'No visitors today'}
               </h3>
               <p className="mt-1 text-sm text-gray-500">
                 {searchTerm 
                   ? `No visitors match "${searchTerm}". Try a different search term.`
+                  : statusFilter !== 'all'
+                  ? `No visitors with status "${statusFilter}" found.`
                   : 'There are no approved visitors scheduled for today.'
                 }
               </p>
@@ -468,7 +603,7 @@ const LobbyAttendant: React.FC = () => {
           )}
           
           {/* Pagination Controls */}
-          {filteredVisitors.length > 0 && (
+          {statusFilteredVisitors.length > 0 && (
             <div className="mt-6 flex items-center justify-between px-4 py-3 border-t border-gray-200">
               <div className="flex items-center space-x-4">
                 <label className="text-sm text-gray-700">Show:</label>
@@ -486,7 +621,7 @@ const LobbyAttendant: React.FC = () => {
                   <option value={50}>50</option>
                 </select>
                 <span className="text-sm text-gray-700">
-                  of {filteredVisitors.length} visitors
+                  of {statusFilteredVisitors.length} visitors
                 </span>
               </div>
               

@@ -176,6 +176,30 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({
             });
           }
         }
+
+        // No-show notification (30+ minutes late)
+        if (!visitor.is_checked_in && visitor.status === 'approved') {
+          const scheduledUTC = new Date(visitor.scheduled_time);
+          const timeDiff = now.getTime() - scheduledUTC.getTime();
+          const minutesLate = timeDiff / (1000 * 60);
+          
+          // Add buffer to prevent false positives
+          const bufferMinutes = 1;
+          if (minutesLate >= (30 + bufferMinutes) && minutesLate <= 120) { // Show for 2 hours after 30 min late
+            const notificationId = `noshow_${visitor.visit_id}`;
+            newNotifications.push({
+              id: notificationId,
+              type: 'no_show',
+              title: 'Visitor No-Show',
+              message: `${visitor.visitor_name} is ${Math.floor(minutesLate)} minutes late and may be a no-show`,
+              timestamp: new Date(scheduledUTC.getTime() + 30 * 60 * 1000),
+              read: readIds.has(notificationId),
+              visitId: visitor.visit_id,
+              employeeName: visitor.employee_name,
+              visitorName: visitor.visitor_name
+            });
+          }
+        }
       }
       
       // For Employees - only see notifications about their own visitors
@@ -264,6 +288,31 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({
           }
         } else {
           console.log('🔔 NotificationSystem: Visitor not checked out or no check-out time');
+        }
+
+        // No-show notification for employee (30+ minutes late)
+        if (!visitor.is_checked_in && visitor.status === 'approved') {
+          const scheduledUTC = new Date(visitor.scheduled_time);
+          const timeDiff = now.getTime() - scheduledUTC.getTime();
+          const minutesLate = timeDiff / (1000 * 60);
+          
+          // Add buffer to prevent false positives
+          const bufferMinutes = 1;
+          if (minutesLate >= (30 + bufferMinutes) && minutesLate <= 120) { // Show for 2 hours after 30 min late
+            console.log('🔔 NotificationSystem: Creating no-show notification for employee');
+            const notificationId = `noshow_${visitor.visit_id}`;
+            newNotifications.push({
+              id: notificationId,
+              type: 'no_show',
+              title: 'Your Visitor May Be a No-Show',
+              message: `${visitor.visitor_name} is ${Math.floor(minutesLate)} minutes late and hasn't arrived yet`,
+              timestamp: new Date(scheduledUTC.getTime() + 30 * 60 * 1000),
+              read: readIds.has(notificationId),
+              visitId: visitor.visit_id,
+              employeeName: visitor.employee_name,
+              visitorName: visitor.visitor_name
+            });
+          }
         }
       } else if (isEmployee) {
         console.log('🔔 NotificationSystem: ❌ Employee visitor mismatch:', {
