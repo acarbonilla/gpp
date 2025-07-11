@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axiosInstance from '../api/axiosInstance';
 import { Link } from 'react-router-dom';
+import { useVisitors } from '../components/VisitorContext';
 import { 
   UserGroupIcon, 
   ClockIcon,
@@ -18,6 +19,7 @@ interface MyVisitor {
   visit_id: number;
   visitor_name: string;
   visitor_email: string;
+  employee_name: string;
   purpose: string;
   scheduled_time: string;
   is_checked_in: boolean;
@@ -56,6 +58,9 @@ const MyVisitorsDashboard: React.FC = () => {
   // Search state
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Get visitor context for notifications
+  const { setVisitors: setContextVisitors } = useVisitors();
+
   const getAuthToken = () => localStorage.getItem('accessToken');
 
   const fetchVisitors = async () => {
@@ -74,6 +79,7 @@ const MyVisitorsDashboard: React.FC = () => {
         },
       });
       setVisitors(response.data);
+      setContextVisitors(response.data); // Update context visitors
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to fetch your visitors');
     } finally {

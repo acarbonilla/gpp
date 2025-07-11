@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axiosInstance from '../api/axiosInstance';
 import { useRefresh } from '../components/RefreshContext';
+import { useVisitors } from '../components/VisitorContext';
 import { useQuery, QueryFunction, useQueryClient } from '@tanstack/react-query';
 import {
   PlusIcon,
@@ -56,6 +57,9 @@ const Dashboard: React.FC = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
+  // Get visitor context for notifications
+  const { setVisitors: setContextVisitors } = useVisitors();
+
   interface Stat {
     label: string;
     value: number;
@@ -95,9 +99,24 @@ const Dashboard: React.FC = () => {
   const fetchDashboardData = useCallback(async (isRefresh = false) => {
     await Promise.all([
       refetchStats(),
-      refetch()
+      refetch(),
+      fetchVisitorsForNotifications()
     ]);
   }, [refetchStats, refetch]);
+
+  // Fetch visitors for notifications
+  const fetchVisitorsForNotifications = async () => {
+    try {
+      const response = await axiosInstance.get('/api/my-visitors/', {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      setContextVisitors(response.data);
+    } catch (error) {
+      console.error('Failed to fetch visitors for notifications:', error);
+    }
+  };
 
   // Initial load
   useEffect(() => {
@@ -109,6 +128,7 @@ const Dashboard: React.FC = () => {
     const interval = setInterval(() => {
       refetchStats();
       refetch();
+      fetchVisitorsForNotifications();
     }, 30000); // 30 seconds
     return () => clearInterval(interval);
   }, [refetchStats, refetch]);

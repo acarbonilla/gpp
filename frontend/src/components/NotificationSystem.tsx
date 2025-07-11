@@ -67,15 +67,30 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({
 
   // Generate notifications from visitor data based on user role
   useEffect(() => {
-    const newNotifications: Notification[] = [];
     const readIds = loadReadNotifications();
-    
-    visitors.forEach(visitor => {
+    const newNotifications: Notification[] = [];
+    const now = new Date();
+
+    console.log('🔔 NotificationSystem: Starting notification processing...');
+    console.log('🔔 NotificationSystem: Processing visitors:', visitors.length);
+    console.log('🔔 NotificationSystem: Current user:', currentUsername);
+    console.log('🔔 NotificationSystem: Is employee:', isEmployee);
+    console.log('🔔 NotificationSystem: Is lobby attendant:', isLobbyAttendant);
+    console.log('🔔 NotificationSystem: Visitors data:', visitors);
+
+    visitors.forEach((visitor, index) => {
+      console.log(`🔔 Processing visitor ${index + 1}:`, {
+        name: visitor.visitor_name,
+        employee: visitor.employee_name,
+        status: visitor.status,
+        is_checked_in: visitor.is_checked_in,
+        check_in_time: visitor.check_in_time
+      });
+
       // For Lobby Attendants - see all visitor notifications
       if (isLobbyAttendant) {
         // New visitor notification (if scheduled within last 30 minutes)
         const scheduledTime = new Date(visitor.scheduled_time);
-        const now = new Date();
         const timeDiff = now.getTime() - scheduledTime.getTime();
         const minutesDiff = timeDiff / (1000 * 60);
         
@@ -116,6 +131,28 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({
           }
         }
 
+        // Check-out notification
+        if (visitor.is_checked_out && visitor.check_out_time) {
+          const checkOutTime = new Date(visitor.check_out_time);
+          const checkOutDiff = now.getTime() - checkOutTime.getTime();
+          const checkOutMinutesDiff = checkOutDiff / (1000 * 60);
+          
+          if (checkOutMinutesDiff <= 30) {
+            const notificationId = `checkout_${visitor.visit_id}`;
+            newNotifications.push({
+              id: notificationId,
+              type: 'check_out',
+              title: 'Visitor Checked Out',
+              message: `${visitor.visitor_name} has checked out after meeting ${visitor.employee_name}`,
+              timestamp: checkOutTime,
+              read: readIds.has(notificationId),
+              visitId: visitor.visit_id,
+              employeeName: visitor.employee_name,
+              visitorName: visitor.visitor_name
+            });
+          }
+        }
+
         // No-show reminder (15+ minutes late)
         if (!visitor.is_checked_in && visitor.status === 'approved') {
           const scheduledUTC = new Date(visitor.scheduled_time);
@@ -143,13 +180,18 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({
       
       // For Employees - only see notifications about their own visitors
       else if (isEmployee && visitor.employee_name === currentUsername) {
+        console.log('🔔 NotificationSystem: ✅ Employee visitor match found!');
+        console.log('🔔 NotificationSystem: Processing employee visitor:', visitor.visitor_name, 'for employee:', visitor.employee_name);
+        
         // New visitor notification for employee
         const scheduledTime = new Date(visitor.scheduled_time);
-        const now = new Date();
         const timeDiff = now.getTime() - scheduledTime.getTime();
         const minutesDiff = timeDiff / (1000 * 60);
         
+        console.log('🔔 NotificationSystem: Time diff for new visitor:', minutesDiff, 'minutes');
+        
         if (minutesDiff >= -30 && minutesDiff <= 30 && visitor.status === 'approved') {
+          console.log('🔔 NotificationSystem: Creating new visitor notification');
           const notificationId = `new_${visitor.visit_id}`;
           newNotifications.push({
             id: notificationId,
@@ -166,11 +208,15 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({
 
         // Check-in notification for employee
         if (visitor.is_checked_in && visitor.check_in_time) {
+          console.log('🔔 NotificationSystem: ✅ Found checked-in visitor:', visitor.visitor_name);
           const checkInTime = new Date(visitor.check_in_time);
           const checkInDiff = now.getTime() - checkInTime.getTime();
           const checkInMinutesDiff = checkInDiff / (1000 * 60);
           
+          console.log('🔔 NotificationSystem: Check-in time diff:', checkInMinutesDiff, 'minutes');
+          
           if (checkInMinutesDiff <= 30) {
+            console.log('🔔 NotificationSystem: Creating check-in notification');
             const notificationId = `checkin_${visitor.visit_id}`;
             newNotifications.push({
               id: notificationId,
@@ -183,40 +229,61 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({
               employeeName: visitor.employee_name,
               visitorName: visitor.visitor_name
             });
+          } else {
+            console.log('🔔 NotificationSystem: Check-in too old (>30 minutes)');
           }
+        } else {
+          console.log('🔔 NotificationSystem: Visitor not checked in or no check-in time');
         }
 
-        // No-show notification for employee
-        if (visitor.status === 'no_show') {
-          const scheduledUTC = new Date(visitor.scheduled_time);
-          const timeDiff = now.getTime() - scheduledUTC.getTime();
-          const minutesLate = timeDiff / (1000 * 60);
+        // Check-out notification for employee
+        if (visitor.is_checked_out && visitor.check_out_time) {
+          console.log('🔔 NotificationSystem: ✅ Found checked-out visitor:', visitor.visitor_name);
+          const checkOutTime = new Date(visitor.check_out_time);
+          const checkOutDiff = now.getTime() - checkOutTime.getTime();
+          const checkOutMinutesDiff = checkOutDiff / (1000 * 60);
           
-          // Add buffer to prevent false positives
-          const bufferMinutes = 1;
-          if (minutesLate >= (15 + bufferMinutes) && minutesLate <= 60) {
-            const notificationId = `noshow_${visitor.visit_id}`;
+          console.log('🔔 NotificationSystem: Check-out time diff:', checkOutMinutesDiff, 'minutes');
+          
+          if (checkOutMinutesDiff <= 30) {
+            console.log('🔔 NotificationSystem: Creating check-out notification');
+            const notificationId = `checkout_${visitor.visit_id}`;
             newNotifications.push({
               id: notificationId,
-              type: 'no_show',
-              title: 'Visitor No Show',
-              message: `${visitor.visitor_name} did not arrive for their scheduled meeting`,
-              timestamp: new Date(scheduledUTC.getTime() + 15 * 60 * 1000),
+              type: 'check_out',
+              title: 'Your Visitor Has Left',
+              message: `${visitor.visitor_name} has checked out and left the building`,
+              timestamp: checkOutTime,
               read: readIds.has(notificationId),
               visitId: visitor.visit_id,
               employeeName: visitor.employee_name,
               visitorName: visitor.visitor_name
             });
+          } else {
+            console.log('🔔 NotificationSystem: Check-out too old (>30 minutes)');
           }
+        } else {
+          console.log('🔔 NotificationSystem: Visitor not checked out or no check-out time');
         }
+      } else if (isEmployee) {
+        console.log('🔔 NotificationSystem: ❌ Employee visitor mismatch:', {
+          visitor_employee: visitor.employee_name,
+          current_user: currentUsername,
+          match: visitor.employee_name === currentUsername
+        });
       }
     });
 
     // Sort by timestamp (newest first)
     newNotifications.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
     
+    console.log('🔔 NotificationSystem: Final notifications created:', newNotifications.length);
+    console.log('🔔 NotificationSystem: Notifications:', newNotifications);
+    
     setNotifications(newNotifications);
     setUnreadCount(newNotifications.filter(n => !n.read).length);
+    
+    console.log('🔔 NotificationSystem: Unread count set to:', newNotifications.filter(n => !n.read).length);
   }, [visitors, isLobbyAttendant, isEmployee, currentUsername]);
 
   const markAsRead = (notificationId: string) => {

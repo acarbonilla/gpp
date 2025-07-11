@@ -750,12 +750,14 @@ class MyVisitorsAPIView(APIView):
                 'visit_id': visit.id,
                 'visitor_name': visit.visitor.full_name,
                 'visitor_email': visit.visitor.email,
+                'employee_name': visit.employee.username,  # Use username for consistent comparison
                 'purpose': visit.purpose,
                 'scheduled_time': visit.scheduled_time,
                 'is_checked_in': is_checked_in,
                 'check_in_time': check_in_time,
                 'is_checked_out': is_checked_out,
                 'check_out_time': check_out_time,
+                'status': visit.status,
             })
         return Response(data)
 
