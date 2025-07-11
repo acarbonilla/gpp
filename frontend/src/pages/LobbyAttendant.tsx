@@ -168,13 +168,20 @@ const LobbyAttendant: React.FC = () => {
     }
   };
 
-  // Robust UTC logic for no show
+  // Robust UTC logic for no show - improved with better timezone handling
   const shouldShowNoShowButton = (visitor: Visitor) => {
     const nowUTC = new Date();
     const scheduledUTC = new Date(visitor.scheduled_time);
+    
+    // Add a small buffer to prevent false positives due to timezone differences
+    const bufferMinutes = 1; // 1 minute buffer
     const timeDiff = nowUTC.getTime() - scheduledUTC.getTime();
     const minutesLate = timeDiff / (1000 * 60);
-    return !visitor.is_checked_in && visitor.status === 'approved' && minutesLate >= 15;
+    
+    // Only show no-show button if visitor is 15+ minutes late and not checked in
+    return !visitor.is_checked_in && 
+           visitor.status === 'approved' && 
+           minutesLate >= (15 + bufferMinutes);
   };
 
   // Format date and time

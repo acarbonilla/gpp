@@ -22,9 +22,12 @@ const BulkActions: React.FC<BulkActionsProps> = ({
   const eligibleForNoShow = visitors.filter(v => {
     const nowUTC = new Date();
     const scheduledUTC = new Date(v.scheduled_time);
+    
+    // Add a small buffer to prevent false positives due to timezone differences
+    const bufferMinutes = 1; // 1 minute buffer
     const timeDiff = nowUTC.getTime() - scheduledUTC.getTime();
     const minutesLate = timeDiff / (1000 * 60);
-    return !v.is_checked_in && v.status === 'approved' && minutesLate >= 15;
+    return !v.is_checked_in && v.status === 'approved' && minutesLate >= (15 + bufferMinutes);
   });
 
   const eligibleForCheckIn = visitors.filter(v => !v.is_checked_in && v.status === 'approved');

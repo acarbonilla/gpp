@@ -654,8 +654,13 @@ class VisitLogCheckInAPIView(APIView):
             return Response({'error': 'Visitor already checked in.'}, status=400)
 
         # Check if visit has expired (only for scheduled visits, not walk-ins)
-        if visit.visit_type == 'scheduled' and visit.scheduled_time < timezone.now():
-            return Response({'error': 'Visit has expired.'}, status=400)
+        # Allow check-ins within 30 minutes after scheduled time for scheduled visits
+        if visit.visit_type == 'scheduled':
+            from datetime import timedelta
+            # Allow check-in up to 30 minutes after scheduled time
+            latest_checkin_time = visit.scheduled_time + timedelta(minutes=30)
+            if timezone.now() > latest_checkin_time:
+                return Response({'error': 'Visit has expired. Check-in is only allowed within 30 minutes of scheduled time.'}, status=400)
 
         # Create or get visit log entry
         visit_log, created = VisitLog.objects.get_or_create(

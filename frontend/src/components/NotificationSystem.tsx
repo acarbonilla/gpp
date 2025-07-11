@@ -122,7 +122,9 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({
           const timeDiff = now.getTime() - scheduledUTC.getTime();
           const minutesLate = timeDiff / (1000 * 60);
           
-          if (minutesLate >= 15 && minutesLate <= 45) {
+          // Add buffer to prevent false positives
+          const bufferMinutes = 1;
+          if (minutesLate >= (15 + bufferMinutes) && minutesLate <= 45) {
             const notificationId = `reminder_${visitor.visit_id}`;
             newNotifications.push({
               id: notificationId,
@@ -190,7 +192,9 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({
           const timeDiff = now.getTime() - scheduledUTC.getTime();
           const minutesLate = timeDiff / (1000 * 60);
           
-          if (minutesLate >= 15 && minutesLate <= 60) {
+          // Add buffer to prevent false positives
+          const bufferMinutes = 1;
+          if (minutesLate >= (15 + bufferMinutes) && minutesLate <= 60) {
             const notificationId = `noshow_${visitor.visit_id}`;
             newNotifications.push({
               id: notificationId,

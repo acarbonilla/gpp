@@ -40,4 +40,24 @@ frontend/build/
 
 # Environment variables
 .env
-.env.* 
+.env.*
+
+# Production files
+backups/
+*.sql
+*.sql.gz
+*.tar.gz
+*.zip
+
+# SSL certificates
+*.pem
+*.key
+*.crt
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/ 

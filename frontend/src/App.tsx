@@ -17,7 +17,6 @@ import Reports from './pages/Reports';
 import { useAuth } from './components/AuthContext';
 import { RefreshProvider } from './components/RefreshContext';
 import { VisitorProvider } from './components/VisitorContext';
-import MobileNavTest from './components/MobileNavTest';
 
 // Role-based Dashboard component
 const RoleBasedDashboard: React.FC = () => {
@@ -100,8 +99,6 @@ function App() {
                 } />
               </Routes>
             </main>
-            {/* Mobile Navigation Test Component - Remove after testing */}
-            <MobileNavTest />
           </div>
         </Router>
       </VisitorProvider>

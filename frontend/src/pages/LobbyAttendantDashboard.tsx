@@ -196,12 +196,15 @@ const LobbyAttendantDashboard: React.FC = () => {
     // Always compare in UTC
     const nowUTC = new Date();
     const scheduledUTC = new Date(visitor.scheduled_time);
+    
+    // Add a small buffer to prevent false positives due to timezone differences
+    const bufferMinutes = 1; // 1 minute buffer
     const timeDiff = nowUTC.getTime() - scheduledUTC.getTime();
     const minutesLate = timeDiff / (1000 * 60);
 
     return !visitor.is_checked_in &&
            visitor.status === 'approved' &&
-           minutesLate >= 15;
+           minutesLate >= (15 + bufferMinutes);
   };
 
   // Pagination functions

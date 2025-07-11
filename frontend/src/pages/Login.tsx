@@ -123,15 +123,6 @@ const Login: React.FC = () => {
               {isSubmitting ? 'Signing in...' : 'Sign in'}
             </button>
           </div>
-
-          <div className="text-center">
-            <p className="text-sm text-gray-600">
-              Demo credentials: <br />
-              <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">
-                Username: attendant | Password: (the password you set)
-              </span>
-            </p>
-          </div>
         </form>
       </div>
     </div>
