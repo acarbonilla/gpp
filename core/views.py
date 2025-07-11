@@ -26,8 +26,6 @@ class LoginAPIView(APIView):
         username = request.data.get('username')
         password = request.data.get('password')
         
-        print(f"DEBUG: Login attempt for username: {username}")
-        
         if not username or not password:
             return Response({
                 'error': 'Please provide both username and password'
@@ -36,12 +34,10 @@ class LoginAPIView(APIView):
         user = authenticate(username=username, password=password)
         
         if user is None:
-            print(f"DEBUG: Authentication failed for username: {username}")
             return Response({
                 'error': 'Invalid credentials'
             }, status=status.HTTP_401_UNAUTHORIZED)
         
-        print(f"DEBUG: Authentication successful for user: {user.username}")
         refresh = RefreshToken.for_user(user)
         
         return Response({
@@ -77,10 +73,6 @@ class UserInfoAPIView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        print(f"DEBUG: UserInfoAPIView.get() called by user: {request.user.username if request.user.is_authenticated else 'Anonymous'}")
-        print(f"DEBUG: User authenticated: {request.user.is_authenticated}")
-        print(f"DEBUG: Authorization header: {request.headers.get('Authorization', 'Not found')}")
-        
         user = request.user
         groups = list(user.groups.values_list('name', flat=True))
         return Response({
@@ -478,19 +470,12 @@ class TodayVisitorsAPIView(APIView):
     
     def get(self, request):
         """Get all approved visitors for today"""
-        print("DEBUG: TodayVisitorsAPIView.get() called")
         today = timezone.now().date()
-        
-        # Debug: Print today's date
-        print(f"Today's date: {today}")
         
         # Get all approved visits for today
         # Use a more robust date comparison that handles timezone issues
         today_start = timezone.make_aware(datetime.combine(today, datetime.min.time()))
         today_end = timezone.make_aware(datetime.combine(today, datetime.max.time()))
-        
-        print(f"Today start: {today_start}")
-        print(f"Today end: {today_end}")
         
         # Get all approved visits for today (use range for robust timezone handling)
         today_visits = VisitRequest.objects.filter(
@@ -498,12 +483,6 @@ class TodayVisitorsAPIView(APIView):
             scheduled_time__range=(today_start, today_end),
             visitor__isnull=False
         ).select_related('visitor', 'employee')
-        
-        print(f"Found {today_visits.count()} approved visits for today/tomorrow")
-        
-        # Debug: Print all visits found
-        for visit in today_visits:
-            print(f"Visit ID: {visit.id}, Status: {visit.status}, Type: {visit.visit_type}, Visitor: {visit.visitor.full_name}, Scheduled: {visit.scheduled_time}")
         
         visitors_data = []
         for visit in today_visits:
@@ -536,8 +515,6 @@ class TodayVisitorsAPIView(APIView):
                 'check_out_time': check_out_time,
             })
         
-        print(f"DEBUG: Returning {len(visitors_data)} visitors")
-        print(f"DEBUG: Response data: {visitors_data}")
         return Response(visitors_data)
 
 
@@ -1226,9 +1203,6 @@ class ReportsDownloadAPIView(APIView):
     
     
     def get(self, request):
-        print("DEBUG: ReportsDownloadAPIView.get() called")  # Debug log
-        print(f"DEBUG: Full URL: {request.build_absolute_uri()}")  # Debug log
-        print(f"DEBUG: Query params: {request.query_params}")  # Debug log
         try:
             # Get query parameters
             format_type = request.query_params.get('format', 'csv')
@@ -1237,8 +1211,6 @@ class ReportsDownloadAPIView(APIView):
             status_filter = request.query_params.get('status', 'all')
             employee_filter = request.query_params.get('employee', 'all')
             visit_type_filter = request.query_params.get('visit_type', 'all')
-            
-            print(f"DEBUG: format_type={format_type}, start_date={start_date}, end_date={end_date}")  # Debug log
             
             # Convert dates with timezone awareness
             if start_date:
@@ -1272,8 +1244,6 @@ class ReportsDownloadAPIView(APIView):
             if visit_type_filter != 'all':
                 queryset = queryset.filter(visit_type=visit_type_filter)
             
-            print(f"DEBUG: queryset count = {queryset.count()}")  # Debug log
-            
             if format_type == 'csv':
                 return self.generate_csv(queryset)
             elif format_type == 'excel':
@@ -1284,7 +1254,6 @@ class ReportsDownloadAPIView(APIView):
                 return Response({'error': 'Unsupported format'}, status=status.HTTP_400_BAD_REQUEST)
                 
         except Exception as e:
-            print(f"DEBUG: Exception in ReportsDownloadAPIView: {e}")  # Debug log
             return Response({
                 'error': f'Failed to download report: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
