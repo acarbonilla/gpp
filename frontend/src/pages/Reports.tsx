@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 import { 
   DocumentArrowDownIcon,
   CalendarIcon,
@@ -83,7 +86,7 @@ const Reports: React.FC = () => {
         return;
       }
 
-      const response = await axiosInstance.get('/api/reports/', {
+      const response = await axiosInstance.get('/api/generate-reports/', {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -109,50 +112,206 @@ const Reports: React.FC = () => {
   const downloadReport = async (format: 'csv' | 'pdf' | 'excel') => {
     try {
       setDownloading(format);
+      setError(null);
       
-      const token = getAuthToken();
-      if (!token) {
-        setError('No authentication token found. Please login.');
+      // Check if we have report data first
+      if (!reportData || !reportData.visitors) {
+        setError('Please generate a report first before downloading.');
         return;
       }
 
-      const params = {
-        format,
-        start_date: dateRange.startDate,
-        end_date: dateRange.endDate,
-        status: filters.status,
-        employee: filters.employee,
-        visit_type: filters.visitType
-      };
+      if (format === 'csv') {
+        // Generate CSV client-side using report data
+        const headers = [
+          'Visitor Name',
+          'Employee Name',
+          'Scheduled Time',
+          'Status',
+          'Check-in Time',
+          'Check-out Time',
+          'Purpose',
+          'Visit Type'
+        ];
 
-      console.log('DEBUG: Download params:', params); // Debug log
+        const csvData = reportData.visitors.map((visitor: any) => [
+          visitor.visitor_name || 'Unknown',
+          visitor.employee_name || 'Unknown',
+          new Date(visitor.scheduled_time).toLocaleString(),
+          visitor.status || 'Unknown',
+          visitor.check_in_time ? new Date(visitor.check_in_time).toLocaleString() : '',
+          visitor.check_out_time ? new Date(visitor.check_out_time).toLocaleString() : '',
+          visitor.purpose || '',
+          visitor.visit_type || ''
+        ]);
 
-      const response = await axiosInstance.get('/api/reports/download/', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-        params,
-        responseType: 'blob'
-      });
+        const csvContent = [
+          headers.join(','),
+          ...csvData.map(row => row.map(cell => `"${cell}"`).join(','))
+        ].join('\n');
 
-      console.log('DEBUG: Response received:', response); // Debug log
-      console.log('DEBUG: Response data type:', typeof response.data); // Debug log
-      console.log('DEBUG: Response data size:', response.data.size); // Debug log
+        // Create and download file
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = window.URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `visitor_report_${reportType}_${dateRange.startDate}_to_${dateRange.endDate}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
 
-      // Create download link
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `visitor_report_${reportType}_${dateRange.startDate}_to_${dateRange.endDate}.${format}`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      } else if (format === 'pdf') {
+        // Generate PDF using jsPDF
+        const doc = new jsPDF();
+        
+        // Add title
+        const title = getReportTitle();
+        doc.setFontSize(18);
+        doc.text(title, 14, 22);
+        
+        // Add summary stats
+        doc.setFontSize(12);
+        doc.text(`Report Summary`, 14, 35);
+        doc.setFontSize(10);
+        doc.text(`Total Visitors: ${reportData.totalVisitors}`, 14, 45);
+        doc.text(`Checked In: ${reportData.checkedInVisitors}`, 14, 52);
+        doc.text(`Checked Out: ${reportData.checkedOutVisitors}`, 14, 59);
+        doc.text(`No Show: ${reportData.noShowVisitors}`, 14, 66);
+        doc.text(`Pending: ${reportData.pendingVisitors}`, 14, 73);
+        
+        // Add table headers
+        const headers = [
+          'Visitor Name',
+          'Employee',
+          'Scheduled Time',
+          'Status',
+          'Check-in Time',
+          'Check-out Time',
+          'Purpose'
+        ];
+
+        // Prepare table data
+        const tableData = reportData.visitors.map((visitor: any) => [
+          visitor.visitor_name || 'Unknown',
+          visitor.employee_name || 'Unknown',
+          new Date(visitor.scheduled_time).toLocaleDateString(),
+          visitor.status || 'Unknown',
+          visitor.check_in_time ? new Date(visitor.check_in_time).toLocaleDateString() : '',
+          visitor.check_out_time ? new Date(visitor.check_out_time).toLocaleDateString() : '',
+          visitor.purpose || ''
+        ]);
+
+        // Add table to PDF (only if there are visitors)
+        if (tableData.length > 0) {
+          autoTable(doc, {
+            head: [headers],
+            body: tableData,
+            startY: 85,
+            styles: {
+              fontSize: 8,
+              cellPadding: 2
+            },
+            headStyles: {
+              fillColor: [66, 139, 202],
+              textColor: 255
+            },
+            alternateRowStyles: {
+              fillColor: [245, 245, 245]
+            }
+          });
+        } else {
+          // Add message if no visitors
+          doc.setFontSize(10);
+          doc.text('No visitors found for the selected date range.', 14, 85);
+        }
+
+        // Save the PDF
+        doc.save(`visitor_report_${reportType}_${dateRange.startDate}_to_${dateRange.endDate}.pdf`);
+
+      } else if (format === 'excel') {
+        // Generate Excel using XLSX library
+        const workbook = XLSX.utils.book_new();
+        
+        // Create summary sheet
+        const summaryData = [
+          ['Report Summary'],
+          [''],
+          ['Total Visitors', reportData.totalVisitors],
+          ['Checked In', reportData.checkedInVisitors],
+          ['Checked Out', reportData.checkedOutVisitors],
+          ['No Show', reportData.noShowVisitors],
+          ['Pending', reportData.pendingVisitors],
+          [''],
+          ['Performance Metrics'],
+          [''],
+          ['Average Check-in Time', reportData.averageCheckInTime],
+          ['Peak Hours', reportData.peakHours],
+          [''],
+          ['Top Hosting Employees'],
+          ['Name', 'Visitors']
+        ];
+        
+        // Add top employees data
+        reportData.topEmployees.forEach(employee => {
+          summaryData.push([employee.name, employee.visitors]);
+        });
+        
+        summaryData.push(['']);
+        summaryData.push(['Top Visit Purposes']);
+        summaryData.push(['Purpose', 'Count']);
+        
+        // Add top purposes data
+        reportData.topPurposes.forEach(purpose => {
+          summaryData.push([purpose.purpose, purpose.count]);
+        });
+        
+        const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
+        XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
+        
+        // Create detailed visitors sheet
+        const visitorHeaders = [
+          'Visitor Name',
+          'Employee Name',
+          'Scheduled Time',
+          'Status',
+          'Check-in Time',
+          'Check-out Time',
+          'Purpose',
+          'Visit Type'
+        ];
+        
+        const visitorData = reportData.visitors.map((visitor: any) => [
+          visitor.visitor_name || 'Unknown',
+          visitor.employee_name || 'Unknown',
+          new Date(visitor.scheduled_time).toLocaleString(),
+          visitor.status || 'Unknown',
+          visitor.check_in_time ? new Date(visitor.check_in_time).toLocaleString() : '',
+          visitor.check_out_time ? new Date(visitor.check_out_time).toLocaleString() : '',
+          visitor.purpose || '',
+          visitor.visit_type || ''
+        ]);
+        
+        const visitorsSheet = XLSX.utils.aoa_to_sheet([visitorHeaders, ...visitorData]);
+        XLSX.utils.book_append_sheet(workbook, visitorsSheet, 'Visitors');
+        
+        // Generate and download Excel file
+        const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+        const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `visitor_report_${reportType}_${dateRange.startDate}_to_${dateRange.endDate}.xlsx`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      }
 
     } catch (err: any) {
       console.error('Error downloading report:', err);
-      console.error('Error details:', err.response); // Debug log
-      setError('Failed to download report');
+      setError('Failed to generate report file');
     } finally {
       setDownloading(null);
     }
@@ -306,7 +465,7 @@ const Reports: React.FC = () => {
         )}
 
         {/* Report Data */}
-        {reportData && (
+        {reportData ? (
           <div className="space-y-6">
             {/* Report Header */}
             <div className="bg-white rounded-lg shadow p-6">
@@ -463,6 +622,23 @@ const Reports: React.FC = () => {
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg shadow p-6 text-center">
+            <div className="max-w-md mx-auto">
+              <DocumentChartBarIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No Report Generated</h3>
+              <p className="text-gray-600 mb-4">
+                Configure your report parameters above and click "Generate Report" to view your data.
+              </p>
+              <button
+                onClick={fetchReportData}
+                disabled={loading}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Generating...' : 'Generate Report'}
+              </button>
             </div>
           </div>
         )}

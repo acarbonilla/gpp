@@ -61,6 +61,22 @@ class VisitRequest(models.Model):
         expired_requests.update(status='expired')
         return count
 
+    @property
+    def is_checked_in(self):
+        """Check if the visitor has checked in"""
+        try:
+            return self.visitlog.check_in_time is not None
+        except VisitLog.DoesNotExist:
+            return False
+
+    @property
+    def is_checked_out(self):
+        """Check if the visitor has checked out"""
+        try:
+            return self.visitlog.check_out_time is not None
+        except VisitLog.DoesNotExist:
+            return False
+
 
 class VisitLog(models.Model):
     visit_request = models.OneToOneField(VisitRequest, on_delete=models.CASCADE)

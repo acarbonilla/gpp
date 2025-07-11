@@ -30,8 +30,8 @@ router.register(r'visit-logs', VisitLogViewSet)
 
 urlpatterns = [
     # Reports endpoints (moved to top to avoid conflicts)
-    path('reports/download/', ReportsDownloadAPIView.as_view(), name='reports-download'),
-    path('reports/', ReportsAPIView.as_view(), name='reports'),
+    path('download-reports/', ReportsDownloadAPIView.as_view(), name='reports-download'),
+    path('generate-reports/', ReportsAPIView.as_view(), name='reports'),
     
     path('visitor-form/<uuid:token>/', CompleteVisitorInfoAPIView.as_view(), name='visitor-form'),
     path('visit-requests/pending/', PendingVisitsAPIView.as_view(), name='pending-visits'),

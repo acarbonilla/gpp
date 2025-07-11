@@ -18,12 +18,15 @@ import csv
 import json
 from io import StringIO
 import logging
+from django.db.models import Count, Q, Avg
 
 
 class LoginAPIView(APIView):
     def post(self, request):
         username = request.data.get('username')
         password = request.data.get('password')
+        
+        print(f"DEBUG: Login attempt for username: {username}")
         
         if not username or not password:
             return Response({
@@ -33,10 +36,12 @@ class LoginAPIView(APIView):
         user = authenticate(username=username, password=password)
         
         if user is None:
+            print(f"DEBUG: Authentication failed for username: {username}")
             return Response({
                 'error': 'Invalid credentials'
             }, status=status.HTTP_401_UNAUTHORIZED)
         
+        print(f"DEBUG: Authentication successful for user: {user.username}")
         refresh = RefreshToken.for_user(user)
         
         return Response({
@@ -72,6 +77,10 @@ class UserInfoAPIView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
+        print(f"DEBUG: UserInfoAPIView.get() called by user: {request.user.username if request.user.is_authenticated else 'Anonymous'}")
+        print(f"DEBUG: User authenticated: {request.user.is_authenticated}")
+        print(f"DEBUG: Authorization header: {request.headers.get('Authorization', 'Not found')}")
+        
         user = request.user
         groups = list(user.groups.values_list('name', flat=True))
         return Response({
@@ -1089,9 +1098,16 @@ class ReportsAPIView(APIView):
             employee_filter = request.query_params.get('employee', 'all')
             visit_type_filter = request.query_params.get('visit_type', 'all')
             
-            # Convert dates
-            start_datetime = datetime.strptime(start_date, '%Y-%m-%d') if start_date else timezone.now() - timedelta(days=7)
-            end_datetime = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1) if end_date else timezone.now()
+            # Convert dates with timezone awareness
+            if start_date:
+                start_datetime = timezone.make_aware(datetime.strptime(start_date, '%Y-%m-%d'))
+            else:
+                start_datetime = timezone.now() - timedelta(days=7)
+                
+            if end_date:
+                end_datetime = timezone.make_aware(datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1))
+            else:
+                end_datetime = timezone.now()
             
             # Base queryset
             queryset = VisitRequest.objects.filter(
@@ -1102,9 +1118,9 @@ class ReportsAPIView(APIView):
             # Apply filters
             if status_filter != 'all':
                 if status_filter == 'checked_in':
-                    queryset = queryset.filter(is_checked_in=True, is_checked_out=False)
+                    queryset = queryset.filter(visitlog__check_in_time__isnull=False, visitlog__check_out_time__isnull=True)
                 elif status_filter == 'checked_out':
-                    queryset = queryset.filter(is_checked_out=True)
+                    queryset = queryset.filter(visitlog__check_out_time__isnull=False)
                 else:
                     queryset = queryset.filter(status=status_filter)
             
@@ -1116,13 +1132,13 @@ class ReportsAPIView(APIView):
             
             # Calculate metrics
             total_visitors = queryset.count()
-            checked_in_visitors = queryset.filter(visitlog__check_in_time__isnull=False).count()
+            checked_in_visitors = queryset.filter(visitlog__check_in_time__isnull=False, visitlog__check_out_time__isnull=True).count()
             checked_out_visitors = queryset.filter(visitlog__check_out_time__isnull=False).count()
             no_show_visitors = queryset.filter(status='no_show').count()
             pending_visitors = queryset.filter(status='pending').count()
             
             # Calculate average check-in time
-            checked_in_requests = queryset.filter(visitlog__check_in_time__isnull=False)
+            checked_in_requests = queryset.filter(visitlog__check_in_time__isnull=False, visitlog__check_out_time__isnull=True)
             if checked_in_requests.exists():
                 # This is a simplified calculation - in a real scenario you'd need more complex logic
                 average_check_in_time = "Calculated from check-in data"
@@ -1161,15 +1177,24 @@ class ReportsAPIView(APIView):
             
             # Get detailed visitor list
             visitors_data = []
-            for visit in queryset.select_related('visitor', 'employee', 'visitlog').order_by('-scheduled_time')[:100]:
+            for visit in queryset.select_related('visitor', 'employee').order_by('-scheduled_time')[:100]:
+                # Get visit log if it exists
+                try:
+                    visit_log = VisitLog.objects.get(visit_request=visit)
+                    check_in_time = visit_log.check_in_time.isoformat() if visit_log.check_in_time else None
+                    check_out_time = visit_log.check_out_time.isoformat() if visit_log.check_out_time else None
+                except VisitLog.DoesNotExist:
+                    check_in_time = None
+                    check_out_time = None
+                
                 visitors_data.append({
                     'visit_id': visit.id,
                     'visitor_name': visit.visitor.full_name if visit.visitor else 'Unknown',
                     'employee_name': visit.employee.username,
                     'scheduled_time': visit.scheduled_time.isoformat(),
                     'status': visit.status,
-                    'check_in_time': visit.visitlog.check_in_time.isoformat() if hasattr(visit, 'visitlog') and visit.visitlog and visit.visitlog.check_in_time else None,
-                    'check_out_time': visit.visitlog.check_out_time.isoformat() if hasattr(visit, 'visitlog') and visit.visitlog and visit.visitlog.check_out_time else None,
+                    'check_in_time': check_in_time,
+                    'check_out_time': check_out_time,
                     'purpose': visit.purpose,
                     'visit_type': visit.visit_type
                 })
@@ -1196,8 +1221,11 @@ class ReportsAPIView(APIView):
 class ReportsDownloadAPIView(APIView):
     permission_classes = [IsAuthenticated, IsLobbyAttendant]
     
+    
     def get(self, request):
         print("DEBUG: ReportsDownloadAPIView.get() called")  # Debug log
+        print(f"DEBUG: Full URL: {request.build_absolute_uri()}")  # Debug log
+        print(f"DEBUG: Query params: {request.query_params}")  # Debug log
         try:
             # Get query parameters
             format_type = request.query_params.get('format', 'csv')
@@ -1209,9 +1237,16 @@ class ReportsDownloadAPIView(APIView):
             
             print(f"DEBUG: format_type={format_type}, start_date={start_date}, end_date={end_date}")  # Debug log
             
-            # Convert dates
-            start_datetime = datetime.strptime(start_date, '%Y-%m-%d') if start_date else timezone.now() - timedelta(days=7)
-            end_datetime = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1) if end_date else timezone.now()
+            # Convert dates with timezone awareness
+            if start_date:
+                start_datetime = timezone.make_aware(datetime.strptime(start_date, '%Y-%m-%d'))
+            else:
+                start_datetime = timezone.now() - timedelta(days=7)
+                
+            if end_date:
+                end_datetime = timezone.make_aware(datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1))
+            else:
+                end_datetime = timezone.now()
             
             # Base queryset
             queryset = VisitRequest.objects.filter(
@@ -1263,10 +1298,17 @@ class ReportsDownloadAPIView(APIView):
             'Check-in Time', 'Check-out Time', 'Purpose', 'Visit Type', 'Row Error'
         ])
         
-        for visit in queryset.select_related('visitor', 'employee', 'visitlog'):
+        for visit in queryset.select_related('visitor', 'employee'):
             try:
-                check_in_time = visit.visitlog.check_in_time.strftime('%Y-%m-%d %H:%M') if hasattr(visit, 'visitlog') and visit.visitlog and visit.visitlog.check_in_time else ''
-                check_out_time = visit.visitlog.check_out_time.strftime('%Y-%m-%d %H:%M') if hasattr(visit, 'visitlog') and visit.visitlog and visit.visitlog.check_out_time else ''
+                # Get visit log if it exists
+                try:
+                    visit_log = VisitLog.objects.get(visit_request=visit)
+                    check_in_time = visit_log.check_in_time.strftime('%Y-%m-%d %H:%M') if visit_log.check_in_time else ''
+                    check_out_time = visit_log.check_out_time.strftime('%Y-%m-%d %H:%M') if visit_log.check_out_time else ''
+                except VisitLog.DoesNotExist:
+                    check_in_time = ''
+                    check_out_time = ''
+                
                 writer.writerow([
                     visit.visitor.full_name if visit.visitor else 'Unknown',
                     visit.employee.username,
