@@ -472,7 +472,7 @@ const VisitRequests: React.FC = () => {
             <ClockIcon className="h-5 w-5 text-yellow-400" />
             <div className="ml-3">
               <h3 className="text-sm font-medium text-yellow-800">
-                Pending Approvals ({pendingCount})
+                Pending Check-ins ({pendingCount})
               </h3>
               <div className="mt-2 text-sm text-yellow-700">
                 You have {pendingCount} visit request{pendingCount > 1 ? 's' : ''} waiting for approval. 

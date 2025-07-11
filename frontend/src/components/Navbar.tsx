@@ -36,7 +36,7 @@ const Navbar: React.FC = () => {
     { name: 'Dashboard', href: '/', icon: HomeIcon },
     { name: 'Create Visit', href: '/create-visit', icon: PlusIcon },
     { name: 'Visit Requests', href: '/visit-requests', icon: ClipboardDocumentListIcon },
-    { name: 'Pending Approvals', href: '/pending-approvals', icon: ClockIcon },
+            { name: 'Pending Check-ins', href: '/pending-approvals', icon: ClockIcon },
   ];
   // Only add My Visitors if not lobby attendant
   if (!isLobbyAttendant) {

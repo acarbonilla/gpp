@@ -367,10 +367,12 @@ class PendingVisitsAPIView(APIView):
             print(f"User: {request.user.username}")
             print(f"User authenticated: {request.user.is_authenticated}")
             
+            # Get approved visits that haven't been checked in yet (consistent with reports)
             pending_visits = VisitRequest.objects.filter(
                 employee=request.user,
-                status='pending',
-                visitor__isnull=False  # Only visits with completed visitor info
+                status='approved',
+                visitor__isnull=False,  # Only visits with completed visitor info
+                visitlog__check_in_time__isnull=True  # Not checked in yet
             ).select_related('visitor').order_by('-created_at')
             
             print(f"Found {pending_visits.count()} pending visits")
@@ -827,10 +829,12 @@ class DashboardMetricsView(APIView):
                 # Employee metrics
                 total_requests = VisitRequest.objects.filter(employee=user).count()
                 
-                pending_approvals = VisitRequest.objects.filter(
+                # Count approved visits that haven't been checked in yet (consistent with reports)
+                pending_checkins = VisitRequest.objects.filter(
                     employee=user,
-                    status='pending',
-                    visitor__isnull=False
+                    status='approved',
+                    visitor__isnull=False,
+                    visitlog__check_in_time__isnull=True
                 ).count()
                 
                 active_visitors = VisitRequest.objects.filter(
@@ -849,8 +853,8 @@ class DashboardMetricsView(APIView):
                         'color': 'blue'
                     },
                     {
-                        'label': 'Pending Approvals',
-                        'value': pending_approvals,
+                        'label': 'Pending Check-in',
+                        'value': pending_checkins,
                         'icon': 'ClockIcon',
                         'color': 'yellow'
                     },
@@ -1232,7 +1236,8 @@ class ReportsAPIView(APIView):
             checked_in_visitors = queryset.filter(visitlog__check_in_time__isnull=False, visitlog__check_out_time__isnull=True).count()
             checked_out_visitors = queryset.filter(visitlog__check_out_time__isnull=False).count()
             no_show_visitors = queryset.filter(status='no_show').count()
-            pending_visitors = queryset.filter(status='pending').count()
+            # Updated logic: approved but not checked in
+            pending_visitors = queryset.filter(status='approved', visitlog__check_in_time__isnull=True).count()
             
             # Calculate average check-in time
             checked_in_requests = queryset.filter(visitlog__check_in_time__isnull=False, visitlog__check_out_time__isnull=True)

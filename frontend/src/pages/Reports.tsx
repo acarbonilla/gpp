@@ -519,7 +519,15 @@ const Reports: React.FC = () => {
                 </div>
                 <div className="bg-yellow-50 rounded-lg p-4 text-center">
                   <div className="text-2xl font-bold text-yellow-900">{reportData.pendingVisitors}</div>
-                  <div className="text-sm text-yellow-700">Pending</div>
+                  <div className="text-sm text-yellow-700 flex items-center justify-center gap-1">
+                    Pending Check-In
+                    <span title="Visitors who are approved but have not yet checked in at the lobby.">
+                      <svg className="h-4 w-4 text-yellow-500 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="10" strokeWidth="2" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01" />
+                      </svg>
+                    </span>
+                  </div>
                 </div>
               </div>
 
