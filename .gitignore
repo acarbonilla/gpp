@@ -57,6 +57,11 @@ backups/
 # Logs
 logs/
 *.log
+logs/*.log
+logs/*.log.*
+
+# Keep logs directory but ignore log files
+!logs/.gitkeep
 
 # Temporary files
 tmp/

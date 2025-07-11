@@ -21,36 +21,59 @@ import logging
 from django.db.models import Count, Q, Avg
 
 
+# Set up logger
+logger = logging.getLogger(__name__)
+
 class LoginAPIView(APIView):
     def post(self, request):
-        username = request.data.get('username')
-        password = request.data.get('password')
-        
-        if not username or not password:
+        try:
+            username = request.data.get('username')
+            password = request.data.get('password')
+            
+            if not username or not password:
+                logger.warning(f"Login attempt with missing credentials from IP: {request.META.get('REMOTE_ADDR', 'unknown')}")
+                return Response({
+                    'error': 'Please provide both username and password',
+                    'code': 'MISSING_CREDENTIALS'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            user = authenticate(username=username, password=password)
+            
+            if user is None:
+                logger.warning(f"Failed login attempt for username: {username} from IP: {request.META.get('REMOTE_ADDR', 'unknown')}")
+                return Response({
+                    'error': 'Invalid username or password. Please check your credentials and try again.',
+                    'code': 'INVALID_CREDENTIALS'
+                }, status=status.HTTP_401_UNAUTHORIZED)
+            
+            if not user.is_active:
+                logger.warning(f"Login attempt for inactive user: {username} from IP: {request.META.get('REMOTE_ADDR', 'unknown')}")
+                return Response({
+                    'error': 'Your account has been deactivated. Please contact your administrator.',
+                    'code': 'ACCOUNT_INACTIVE'
+                }, status=status.HTTP_401_UNAUTHORIZED)
+            
+            refresh = RefreshToken.for_user(user)
+            
+            logger.info(f"Successful login for user: {username} from IP: {request.META.get('REMOTE_ADDR', 'unknown')}")
+            
             return Response({
-                'error': 'Please provide both username and password'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        user = authenticate(username=username, password=password)
-        
-        if user is None:
+                'token': str(refresh.access_token),
+                'refresh': str(refresh),
+                'user': {
+                    'id': user.id,
+                    'username': user.username,
+                    'email': user.email,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                }
+            })
+        except Exception as e:
+            logger.error(f"Unexpected error during login: {str(e)}", exc_info=True)
             return Response({
-                'error': 'Invalid credentials'
-            }, status=status.HTTP_401_UNAUTHORIZED)
-        
-        refresh = RefreshToken.for_user(user)
-        
-        return Response({
-            'token': str(refresh.access_token),
-            'refresh': str(refresh),
-            'user': {
-                'id': user.id,
-                'username': user.username,
-                'email': user.email,
-                'first_name': user.first_name,
-                'last_name': user.last_name,
-            }
-        })
+                'error': 'An unexpected error occurred. Please try again later.',
+                'code': 'INTERNAL_ERROR'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class LogoutAPIView(APIView):
@@ -92,7 +115,9 @@ class VisitRequestViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         # Automatically expire pending requests that are past their scheduled time
-        VisitRequest.expire_pending_requests()
+        expired_count = VisitRequest.expire_pending_requests()
+        if expired_count > 0:
+            logger.info(f"Expired {expired_count} pending visit requests")
         
         now = timezone.now()
         return VisitRequest.objects.filter(employee=self.request.user, scheduled_time__gte=now)
@@ -101,16 +126,19 @@ class VisitRequestViewSet(viewsets.ModelViewSet):
         # Validate that scheduled time is not in the past
         scheduled_time = serializer.validated_data.get('scheduled_time')
         if scheduled_time and scheduled_time < timezone.now():
+            logger.warning(f"User {self.request.user.username} attempted to create visit request in the past")
             raise serializers.ValidationError({
                 'scheduled_time': 'Cannot create a visit request for a time that has already passed.'
             })
         
         visit = serializer.save(employee=self.request.user)
+        logger.info(f"User {self.request.user.username} created visit request {visit.id} for {scheduled_time}")
+        
         if visit.visit_type == 'scheduled':
             self.send_invite_link(visit)
         
         # Add invitation link to response for easy sharing
-        serializer.instance.invitation_link = f"http://localhost:3000/visitor-form/{visit.token}"
+        serializer.instance.invitation_link = f"{settings.FRONTEND_URL}/visitor-form/{visit.token}"
 
     def perform_update(self, serializer):
         # Get the original visit request before update
@@ -120,45 +148,47 @@ class VisitRequestViewSet(viewsets.ModelViewSet):
         
         # Save the updated visit request
         visit = serializer.save()
+        logger.info(f"User {self.request.user.username} updated visit request {visit.id}")
         
         # Check if purpose or scheduled_time changed (rescheduling)
         if (original_purpose != visit.purpose or original_time != visit.scheduled_time) and visit.visitor:
             self.send_reschedule_notification(visit, original_purpose, original_time)
         
         # Add invitation link to response for easy sharing
-        serializer.instance.invitation_link = f"http://localhost:3000/visitor-form/{visit.token}"
+        serializer.instance.invitation_link = f"{settings.FRONTEND_URL}/visitor-form/{visit.token}"
+
+    def perform_destroy(self, instance):
+        logger.info(f"User {self.request.user.username} deleted visit request {instance.id}")
+        super().perform_destroy(instance)
 
     def send_reschedule_notification(self, visit_request, original_purpose, original_time):
         subject = f"Visit Rescheduled - {visit_request.visitor.full_name}"
         message = f"""
 Dear {visit_request.visitor.full_name},
 
-Your visit request has been rescheduled.
+Your visit has been rescheduled by {visit_request.employee.get_full_name() or visit_request.employee.username}.
 
-Previous Details:
+Original Details:
 - Purpose: {original_purpose}
 - Scheduled Time: {original_time.strftime('%Y-%m-%d %H:%M')}
 
-New Details:
-- Host: {visit_request.employee.get_full_name() or visit_request.employee.username}
+Updated Details:
 - Purpose: {visit_request.purpose}
 - Scheduled Time: {visit_request.scheduled_time.strftime('%Y-%m-%d %H:%M')}
-- Status: {visit_request.get_status_display()}
 
-Please note the changes and plan accordingly. If you have any questions, please contact {visit_request.employee.get_full_name() or visit_request.employee.username}.
+Please note the changes and plan accordingly.
 
-Thank you for your understanding.
-
-Best regards,
-{visit_request.employee.get_full_name() or visit_request.employee.username}
+Thank you.
         """
         try:
             send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [visit_request.visitor.email])
+            logger.info(f"Reschedule notification sent for visit request {visit_request.id}")
         except Exception as e:
-            print(f"Failed to send reschedule notification email: {e}")
+            logger.error(f"Failed to send reschedule notification for visit request {visit_request.id}: {str(e)}")
+            print(f"Failed to send reschedule email: {e}")
 
     def send_invite_link(self, visit_request):
-        link = f"http://localhost:3000/visitor-form/{visit_request.token}"
+        link = f"{settings.FRONTEND_URL}/visitor-form/{visit_request.token}"
         subject = f"Visit Invitation from {visit_request.employee.get_full_name() or visit_request.employee.username}"
         message = f"""
 Hello,
@@ -180,7 +210,9 @@ Thank you.
         """
         try:
             send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, ["placeholder@email.com"])
+            logger.info(f"Invitation email sent for visit request {visit_request.id}")
         except Exception as e:
+            logger.error(f"Failed to send invitation email for visit request {visit_request.id}: {str(e)}")
             # Log the error but don't fail the request
             print(f"Failed to send email: {e}")
             # In development, you might want to print the link to console
@@ -193,12 +225,18 @@ class CompleteVisitorInfoAPIView(APIView):
         try:
             visit = VisitRequest.objects.get(token=token)
         except VisitRequest.DoesNotExist:
-            return Response({'error': 'Invalid or expired link.'}, status=404)
+            logger.warning(f"Invalid token access attempt: {token} from IP: {request.META.get('REMOTE_ADDR', 'unknown')}")
+            return Response({
+                'error': 'This invitation link is invalid or has expired. Please contact your host for a new invitation.',
+                'code': 'INVALID_TOKEN'
+            }, status=404)
 
         # Check if visitor info is already completed
         if visit.visitor:
+            logger.info(f"Visitor info already completed for token: {token}")
             return Response({
                 'error': 'Visitor information has already been submitted for this visit.',
+                'code': 'ALREADY_COMPLETED',
                 'visitor_name': visit.visitor.full_name
             }, status=400)
 
@@ -208,11 +246,18 @@ class CompleteVisitorInfoAPIView(APIView):
             if visit.status == 'pending':
                 visit.status = 'expired'
                 visit.save()
-            return Response({'error': 'This visit request has expired.'}, status=400)
+                logger.info(f"Visit request expired: {visit.id}")
+            return Response({
+                'error': 'This visit request has expired. Please contact your host to reschedule.',
+                'code': 'EXPIRED_REQUEST'
+            }, status=400)
 
         # Check if visit is already approved/rejected
         if visit.status != 'pending':
-            return Response({'error': f'This visit request has already been {visit.status}.'}, status=400)
+            return Response({
+                'error': f'This visit request has already been {visit.status}. Please contact your host for more information.',
+                'code': 'STATUS_NOT_PENDING'
+            }, status=400)
 
         return Response({
             'visit_details': {
@@ -228,33 +273,58 @@ class CompleteVisitorInfoAPIView(APIView):
         try:
             visit = VisitRequest.objects.get(token=token)
         except VisitRequest.DoesNotExist:
-            return Response({'error': 'Invalid or expired link.'}, status=404)
+            logger.warning(f"Invalid token submission attempt: {token} from IP: {request.META.get('REMOTE_ADDR', 'unknown')}")
+            return Response({
+                'error': 'This invitation link is invalid or has expired. Please contact your host for a new invitation.',
+                'code': 'INVALID_TOKEN'
+            }, status=404)
 
         # Check if visitor info is already completed
         if visit.visitor:
-            return Response({'error': 'Visitor information has already been submitted for this visit.'}, status=400)
+            return Response({
+                'error': 'Visitor information has already been submitted for this visit.',
+                'code': 'ALREADY_COMPLETED'
+            }, status=400)
 
         # Check if visit request is still valid (not expired)
         if visit.scheduled_time < timezone.now():
-            return Response({'error': 'This visit request has expired.'}, status=400)
+            return Response({
+                'error': 'This visit request has expired. Please contact your host to reschedule.',
+                'code': 'EXPIRED_REQUEST'
+            }, status=400)
 
         # Check if visit is already approved/rejected
         if visit.status != 'pending':
-            return Response({'error': f'This visit request has already been {visit.status}.'}, status=400)
+            return Response({
+                'error': f'This visit request has already been {visit.status}. Please contact your host for more information.',
+                'code': 'STATUS_NOT_PENDING'
+            }, status=400)
 
         serializer = VisitorSerializer(data=request.data)
         if serializer.is_valid():
-            visitor = serializer.save(created_by=visit.employee)
-            visit.visitor = visitor
-            visit.save()
-            return Response({
-                'message': 'Visitor information submitted successfully.',
-                'visit_id': visit.id,
-                'scheduled_time': visit.scheduled_time,
-                'visitor_name': visitor.full_name
-            })
+            try:
+                visitor = serializer.save(created_by=visit.employee)
+                visit.visitor = visitor
+                visit.save()
+                
+                logger.info(f"Visitor info completed for visit: {visit.id}, visitor: {visitor.full_name}")
+                
+                return Response({
+                    'message': 'Visitor information submitted successfully. Your host will be notified and will review your request.',
+                    'visit_id': visit.id,
+                    'scheduled_time': visit.scheduled_time,
+                    'visitor_name': visitor.full_name
+                })
+            except Exception as e:
+                logger.error(f"Error saving visitor info: {str(e)}", exc_info=True)
+                return Response({
+                    'error': 'Failed to save visitor information. Please try again.',
+                    'code': 'SAVE_ERROR'
+                }, status=500)
+        
         return Response({
-            'error': 'Invalid visitor information.',
+            'error': 'Please correct the errors below and try again.',
+            'code': 'VALIDATION_ERROR',
             'details': serializer.errors
         }, status=400)
 
@@ -675,18 +745,14 @@ class VisitLogCheckInAPIView(APIView):
         visit_log.checked_in_by = request.user
         visit_log.save()
         
+        logger.info(f"Visitor {visit.visitor.full_name} checked in by {request.user.username} for visit {visit.id}")
+
         return Response({
             'message': 'Visitor checked in successfully.',
-            'visitor': {
-                'name': visit.visitor.full_name,
-                'email': visit.visitor.email,
-            },
-            'visit': {
-                'purpose': visit.purpose,
-                'scheduled_time': visit.scheduled_time,
-                'visit_type': visit.visit_type,
-            },
-            'check_in_time': visit_log.check_in_time
+            'visit_id': visit.id,
+            'visitor_name': visit.visitor.full_name,
+            'check_in_time': visit_log.check_in_time,
+            'checked_in_by': request.user.username
         })
 
 
@@ -713,13 +779,14 @@ class VisitLogCheckOutAPIView(APIView):
         visit_log.checked_out_by = request.user
         visit_log.save()
         
+        logger.info(f"Visitor {visit_log.visitor.full_name} checked out by {request.user.username} for visit {visit_log.visit_request.id}")
+
         return Response({
             'message': 'Visitor checked out successfully.',
-            'visitor': {
-                'name': visit_log.visitor.full_name,
-                'email': visit_log.visitor.email,
-            },
-            'check_out_time': visit_log.check_out_time
+            'visit_id': visit_log.visit_request.id,
+            'visitor_name': visit_log.visitor.full_name,
+            'check_out_time': visit_log.check_out_time,
+            'checked_out_by': request.user.username
         })
 
 
