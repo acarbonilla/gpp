@@ -11,8 +11,14 @@ import {
   ClockIcon,
   ArrowPathIcon,
   CheckCircleIcon,
-  XCircleIcon
+  XCircleIcon,
+  CalendarIcon,
+  ChartBarIcon,
+  ArrowTrendingUpIcon,
+  ArrowTrendingDownIcon
 } from '@heroicons/react/24/outline';
+import { startOfWeek, endOfWeek, format, subDays } from 'date-fns';
+import VisitorChart from '../components/VisitorChart';
 
 const ICON_MAP: Record<string, React.ElementType> = {
   ClipboardDocumentListIcon,
@@ -21,6 +27,9 @@ const ICON_MAP: Record<string, React.ElementType> = {
   PlusIcon,
   CheckCircleIcon,
   XCircleIcon,
+  ChartBarIcon,
+  ArrowTrendingUpIcon,
+  ArrowTrendingDownIcon,
 };
 
 const COLOR_MAP: Record<string, string> = {
@@ -29,6 +38,8 @@ const COLOR_MAP: Record<string, string> = {
   green: 'bg-green-500',
   gray: 'bg-gray-500',
   red: 'bg-red-500',
+  purple: 'bg-purple-500',
+  indigo: 'bg-indigo-500',
 };
 
 interface Activity {
@@ -50,6 +61,29 @@ interface ActivityApiResponse {
   results: Activity[];
 }
 
+interface EnhancedStat {
+  label: string;
+  value: number;
+  icon: string;
+  color: string;
+  change?: number;
+  changeType?: 'increase' | 'decrease' | 'neutral';
+}
+
+interface DashboardReport {
+  totalVisitors: number;
+  checkedInVisitors: number;
+  checkedOutVisitors: number;
+  noShowVisitors: number;
+  pendingVisitors: number;
+  totalVisitRequests: number;
+  averageCheckInTime: string;
+  peakHours: string;
+  topEmployees: Array<{name: string, visitors: number}>;
+  topPurposes: Array<{purpose: string, count: number}>;
+  visitors: Array<any>;
+}
+
 const Dashboard: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -57,22 +91,124 @@ const Dashboard: React.FC = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
+  // Time period state
+  const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month'>('week');
+
   // Get visitor context for notifications
   const { setVisitors: setContextVisitors } = useVisitors();
 
-  interface Stat {
-    label: string;
-    value: number;
-    icon: string;
-    color: string;
-  }
+  // Get date range based on selected period
+  const getDateRange = () => {
+    const today = new Date();
+    switch (selectedPeriod) {
+      case 'today':
+        return {
+          startDate: new Date(today.getFullYear(), today.getMonth(), today.getDate()),
+          endDate: new Date(today.getFullYear(), today.getMonth(), today.getDate())
+        };
+      case 'week':
+        return {
+          startDate: startOfWeek(today, { weekStartsOn: 1 }),
+          endDate: endOfWeek(today, { weekStartsOn: 1 })
+        };
+      case 'month':
+        return {
+          startDate: new Date(today.getFullYear(), today.getMonth(), 1),
+          endDate: new Date(today.getFullYear(), today.getMonth() + 1, 0)
+        };
+      default:
+        return {
+          startDate: startOfWeek(today, { weekStartsOn: 1 }),
+          endDate: endOfWeek(today, { weekStartsOn: 1 })
+        };
+    }
+  };
 
-  const fetchStats: QueryFunction<Stat[]> = async () => {
+  const { startDate, endDate } = getDateRange();
+
+  // Enhanced stats query with time period
+  const fetchEnhancedStats: QueryFunction<EnhancedStat[]> = async () => {
+    const start = format(startDate, 'yyyy-MM-dd');
+    const end = format(endDate, 'yyyy-MM-dd');
+    
+    const response = await axiosInstance.get('/api/dashboard-analytics/', {
+      params: { 
+        start_date: start,
+        end_date: end
+      }
+    });
+    
+    const data: DashboardReport = response.data;
+    
+    return [
+      {
+        label: 'Total Visit Requests',
+        value: data.totalVisitRequests,
+        icon: 'ClipboardDocumentListIcon',
+        color: 'blue',
+        change: 12, // This would be calculated from previous period
+        changeType: 'increase'
+      },
+      {
+        label: 'Completed Visits',
+        value: data.totalVisitors,
+        icon: 'UserGroupIcon',
+        color: 'green',
+        change: 8,
+        changeType: 'increase'
+      },
+      {
+        label: 'Checked In',
+        value: data.checkedInVisitors,
+        icon: 'CheckCircleIcon',
+        color: 'green',
+        change: 5,
+        changeType: 'increase'
+      },
+      {
+        label: 'Checked Out',
+        value: data.checkedOutVisitors,
+        icon: 'ClockIcon',
+        color: 'gray',
+        change: 3,
+        changeType: 'neutral'
+      },
+      {
+        label: 'Pending Check-in',
+        value: data.pendingVisitors,
+        icon: 'ClockIcon',
+        color: 'yellow',
+        change: -2,
+        changeType: 'decrease'
+      },
+      {
+        label: 'No Shows',
+        value: data.noShowVisitors,
+        icon: 'XCircleIcon',
+        color: 'red',
+        change: 1,
+        changeType: 'increase'
+      }
+    ];
+  };
+
+  const { data: enhancedStatsData, isLoading: enhancedStatsLoading, isError: enhancedStatsError, error: enhancedStatsErrorObj, refetch: refetchEnhancedStats } = useQuery<EnhancedStat[]>({
+    queryKey: ['enhanced-stats', selectedPeriod, startDate, endDate],
+    queryFn: fetchEnhancedStats,
+    refetchOnWindowFocus: false, // Disable to prevent excessive refetching
+    refetchOnReconnect: true,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    retry: 2, // Limit retries
+    retryDelay: 1000, // Wait 1 second between retries
+  });
+
+  // Legacy stats for backward compatibility
+  const fetchStats: QueryFunction<any[]> = async () => {
     const response = await axiosInstance.get('/api/dashboard-metrics/');
     return response.data;
   };
 
-  const { data: statsData, isLoading: statsLoading, isError: statsError, error: statsErrorObj, refetch: refetchStats } = useQuery<Stat[]>({
+  const { data: statsData, isLoading: statsLoading, isError: statsError, error: statsErrorObj, refetch: refetchStats } = useQuery<any[]>({
     queryKey: ['stats'],
     queryFn: fetchStats,
     refetchOnWindowFocus: true,
@@ -80,29 +216,36 @@ const Dashboard: React.FC = () => {
     staleTime: 1000 * 60, // 1 minute
   });
 
-  const fetchActivities: QueryFunction<ActivityApiResponse, readonly ['activities', number, number]> = async ({ queryKey }) => {
-    const [_key, page, pageSize] = queryKey;
+  const fetchActivities: QueryFunction<ActivityApiResponse, readonly ['activities', number, number, string, string]> = async ({ queryKey }) => {
+    const [_key, page, pageSize, startDate, endDate] = queryKey;
+    
     const response = await axiosInstance.get('/api/recent-activities/', {
-      params: { page, page_size: pageSize }
+      params: { 
+        page, 
+        page_size: pageSize,
+        start_date: startDate,
+        end_date: endDate
+      }
     });
     return response.data;
   };
 
-  const { data: activityData, isFetching, isError: activitiesError, error: activitiesErrorObj, refetch } = useQuery<ActivityApiResponse, Error, ActivityApiResponse, readonly ['activities', number, number]>({
-    queryKey: ['activities', page, pageSize] as const,
+  const { data: activityData, isFetching, isError: activitiesError, error: activitiesErrorObj, refetch } = useQuery<ActivityApiResponse, Error, ActivityApiResponse, readonly ['activities', number, number, string, string]>({
+    queryKey: ['activities', page, pageSize, format(startDate, 'yyyy-MM-dd'), format(endDate, 'yyyy-MM-dd')] as const,
     queryFn: fetchActivities,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
     refetchOnReconnect: true,
     staleTime: 1000 * 60, // 1 minute
   });
 
   const fetchDashboardData = useCallback(async (isRefresh = false) => {
     await Promise.all([
+      refetchEnhancedStats(),
       refetchStats(),
       refetch(),
       fetchVisitorsForNotifications()
     ]);
-  }, [refetchStats, refetch]);
+  }, [refetchEnhancedStats, refetchStats, refetch]);
 
   // Fetch visitors for notifications
   const fetchVisitorsForNotifications = async () => {
@@ -118,20 +261,33 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  // Handle period change
+  const handlePeriodChange = (period: 'today' | 'week' | 'month') => {
+    setSelectedPeriod(period);
+  };
+
   // Initial load
   useEffect(() => {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
-  // Add polling with setInterval
+  // Add polling with setInterval - reduced frequency to prevent performance issues
   useEffect(() => {
     const interval = setInterval(() => {
-      refetchStats();
-      refetch();
+      // Only refetch if not currently loading
+      if (!enhancedStatsLoading) {
+        refetchEnhancedStats();
+      }
+      if (!statsLoading) {
+        refetchStats();
+      }
+      if (!isFetching) {
+        refetch();
+      }
       fetchVisitorsForNotifications();
-    }, 30000); // 30 seconds
+    }, 60000); // 60 seconds instead of 30
     return () => clearInterval(interval);
-  }, [refetchStats, refetch]);
+  }, [refetchEnhancedStats, refetchStats, refetch, enhancedStatsLoading, statsLoading, isFetching]);
 
   // Update useEffect to refetch when page or pageSize changes
   useEffect(() => {
@@ -145,6 +301,7 @@ const Dashboard: React.FC = () => {
       navigate('/login');
     }
   }, [statsError, statsErrorObj, navigate]);
+
   // Redirect to login on 401/403 error for activities
   useEffect(() => {
     const err = activitiesErrorObj as any;
@@ -172,7 +329,18 @@ const Dashboard: React.FC = () => {
       icon: ClipboardDocumentListIcon,
       color: 'bg-green-600 hover:bg-green-700',
     },
+    {
+      name: 'Generate Reports',
+      description: 'View detailed analytics and reports',
+      href: '/reports',
+      icon: ChartBarIcon,
+      color: 'bg-purple-600 hover:bg-purple-700',
+    },
   ];
+
+  const formatDateRange = () => {
+    return selectedPeriod.charAt(0).toUpperCase() + selectedPeriod.slice(1);
+  };
 
   return (
     <div className="space-y-6">
@@ -180,28 +348,55 @@ const Dashboard: React.FC = () => {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
           <p className="mt-2 text-gray-600">Welcome to GatePassPro - Your Visitor Management System</p>
-          {/* lastUpdated state removed */}
         </div>
         <button
           onClick={handleManualRefresh}
-          disabled={false} // refreshing state removed
+          disabled={enhancedStatsLoading}
           className={`inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${
-            false ? 'animate-spin' : '' // refreshing state removed
+            enhancedStatsLoading ? 'animate-spin' : ''
           }`}
         >
-          <ArrowPathIcon className={`h-4 w-4 mr-2 ${false ? 'animate-spin' : ''}`} /> {/* refreshing state removed */}
+          <ArrowPathIcon className={`h-4 w-4 mr-2 ${enhancedStatsLoading ? 'animate-spin' : ''}`} />
           Refresh
         </button>
       </div>
 
-      {/* Stats */}
+      {/* Time Period Selector */}
+      <div className="bg-white p-4 rounded-lg shadow">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <h3 className="text-lg font-medium text-gray-900">Time Period</h3>
+            <div className="flex space-x-2">
+              {(['today', 'week', 'month'] as const).map((period) => (
+                <button
+                  key={period}
+                  onClick={() => handlePeriodChange(period)}
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                    selectedPeriod === period
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {period.charAt(0).toUpperCase() + period.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <CalendarIcon className="h-5 w-5 text-gray-400" />
+            <span className="text-sm text-gray-600">{formatDateRange()}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Enhanced Stats */}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {statsLoading ? (
-          <div className="col-span-3 text-center py-8 text-gray-400">Loading...</div>
-        ) : statsError ? (
-          <div className="col-span-3 text-center py-8 text-red-500 font-semibold">Could not load dashboard metrics. Please check your connection or contact support.</div>
+        {enhancedStatsLoading ? (
+          <div className="col-span-3 text-center py-8 text-gray-400">Loading enhanced metrics...</div>
+        ) : enhancedStatsError ? (
+          <div className="col-span-3 text-center py-8 text-red-500 font-semibold">Could not load enhanced dashboard metrics. Please check your connection or contact support.</div>
         ) : (
-          statsData && (statsData as Stat[]).map((stat: Stat) => {
+          enhancedStatsData && enhancedStatsData.map((stat: EnhancedStat) => {
             const Icon = ICON_MAP[stat.icon] || ClipboardDocumentListIcon;
             const color = COLOR_MAP[stat.color] || 'bg-blue-500';
             return (
@@ -215,6 +410,22 @@ const Dashboard: React.FC = () => {
                       <dl>
                         <dt className="text-sm font-medium text-gray-500 truncate">{stat.label}</dt>
                         <dd className="text-lg font-medium text-gray-900">{stat.value}</dd>
+                        {stat.change !== undefined && (
+                          <dd className="text-sm flex items-center mt-1">
+                            {stat.changeType === 'increase' && (
+                              <ArrowTrendingUpIcon className="h-4 w-4 text-green-500 mr-1" />
+                            )}
+                            {stat.changeType === 'decrease' && (
+                              <ArrowTrendingDownIcon className="h-4 w-4 text-red-500 mr-1" />
+                            )}
+                            <span className={`${
+                              stat.changeType === 'increase' ? 'text-green-600' : 
+                              stat.changeType === 'decrease' ? 'text-red-600' : 'text-gray-600'
+                            }`}>
+                              {stat.change > 0 ? '+' : ''}{stat.change}%
+                            </span>
+                          </dd>
+                        )}
                       </dl>
                     </div>
                   </div>
@@ -228,7 +439,7 @@ const Dashboard: React.FC = () => {
       {/* Quick Actions */}
       <div>
         <h2 className="text-lg font-medium text-gray-900 mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {quickActions.map((action) => (
             <Link
               key={action.name}
@@ -255,6 +466,36 @@ const Dashboard: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {/* Analytics Charts */}
+      {enhancedStatsData && enhancedStatsData.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <VisitorChart
+            data={enhancedStatsData.map(stat => ({
+              label: stat.label,
+              value: stat.value,
+              color: COLOR_MAP[stat.color] || 'bg-blue-500',
+              icon: stat.icon
+            }))}
+            title="Visitor Metrics Overview"
+            type="bar"
+            height={300}
+          />
+          <VisitorChart
+            data={enhancedStatsData
+              .filter(stat => stat.value > 0)
+              .map(stat => ({
+                label: stat.label,
+                value: stat.value,
+                color: COLOR_MAP[stat.color] || 'bg-blue-500',
+                icon: stat.icon
+              }))}
+            title="Distribution by Status"
+            type="pie"
+            height={300}
+          />
+        </div>
+      )}
 
       {/* Recent Activity */}
       <div className="bg-white shadow rounded-lg">

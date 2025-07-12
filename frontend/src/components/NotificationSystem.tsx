@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { 
@@ -66,26 +66,21 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({
   };
 
   // Generate notifications from visitor data based on user role
-  useEffect(() => {
+  const processedNotifications = useMemo(() => {
     const readIds = loadReadNotifications();
     const newNotifications: Notification[] = [];
     const now = new Date();
 
-    console.log('🔔 NotificationSystem: Starting notification processing...');
-    console.log('🔔 NotificationSystem: Processing visitors:', visitors.length);
-    console.log('🔔 NotificationSystem: Current user:', currentUsername);
-    console.log('🔔 NotificationSystem: Is employee:', isEmployee);
-    console.log('🔔 NotificationSystem: Is lobby attendant:', isLobbyAttendant);
-    console.log('🔔 NotificationSystem: Visitors data:', visitors);
+    // Only log in development and limit the frequency
+    if (process.env.NODE_ENV === 'development' && visitors.length > 0) {
+      console.log('🔔 NotificationSystem: Processing', visitors.length, 'visitors for', currentUsername);
+    }
 
     visitors.forEach((visitor, index) => {
-      console.log(`🔔 Processing visitor ${index + 1}:`, {
-        name: visitor.visitor_name,
-        employee: visitor.employee_name,
-        status: visitor.status,
-        is_checked_in: visitor.is_checked_in,
-        check_in_time: visitor.check_in_time
-      });
+      // Only log in development for the first few visitors
+      if (process.env.NODE_ENV === 'development' && index < 3) {
+        console.log(`🔔 Processing visitor ${index + 1}:`, visitor.visitor_name);
+      }
 
       // For Lobby Attendants - see all visitor notifications
       if (isLobbyAttendant) {
@@ -204,18 +199,12 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({
       
       // For Employees - only see notifications about their own visitors
       else if (isEmployee && visitor.employee_name === currentUsername) {
-        console.log('🔔 NotificationSystem: ✅ Employee visitor match found!');
-        console.log('🔔 NotificationSystem: Processing employee visitor:', visitor.visitor_name, 'for employee:', visitor.employee_name);
-        
         // New visitor notification for employee
         const scheduledTime = new Date(visitor.scheduled_time);
         const timeDiff = now.getTime() - scheduledTime.getTime();
         const minutesDiff = timeDiff / (1000 * 60);
         
-        console.log('🔔 NotificationSystem: Time diff for new visitor:', minutesDiff, 'minutes');
-        
         if (minutesDiff >= -30 && minutesDiff <= 30 && visitor.status === 'approved') {
-          console.log('🔔 NotificationSystem: Creating new visitor notification');
           const notificationId = `new_${visitor.visit_id}`;
           newNotifications.push({
             id: notificationId,
@@ -232,15 +221,11 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({
 
         // Check-in notification for employee
         if (visitor.is_checked_in && visitor.check_in_time) {
-          console.log('🔔 NotificationSystem: ✅ Found checked-in visitor:', visitor.visitor_name);
           const checkInTime = new Date(visitor.check_in_time);
           const checkInDiff = now.getTime() - checkInTime.getTime();
           const checkInMinutesDiff = checkInDiff / (1000 * 60);
           
-          console.log('🔔 NotificationSystem: Check-in time diff:', checkInMinutesDiff, 'minutes');
-          
           if (checkInMinutesDiff <= 30) {
-            console.log('🔔 NotificationSystem: Creating check-in notification');
             const notificationId = `checkin_${visitor.visit_id}`;
             newNotifications.push({
               id: notificationId,
@@ -253,11 +238,7 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({
               employeeName: visitor.employee_name,
               visitorName: visitor.visitor_name
             });
-          } else {
-            console.log('🔔 NotificationSystem: Check-in too old (>30 minutes)');
           }
-        } else {
-          console.log('🔔 NotificationSystem: Visitor not checked in or no check-in time');
         }
 
         // Check-out notification for employee
@@ -326,14 +307,19 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({
     // Sort by timestamp (newest first)
     newNotifications.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
     
-    console.log('🔔 NotificationSystem: Final notifications created:', newNotifications.length);
-    console.log('🔔 NotificationSystem: Notifications:', newNotifications);
+    // Only log in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔔 NotificationSystem: Created', newNotifications.length, 'notifications');
+    }
     
-    setNotifications(newNotifications);
-    setUnreadCount(newNotifications.filter(n => !n.read).length);
-    
-    console.log('🔔 NotificationSystem: Unread count set to:', newNotifications.filter(n => !n.read).length);
+    return newNotifications;
   }, [visitors, isLobbyAttendant, isEmployee, currentUsername]);
+
+  // Update notifications state when processedNotifications changes
+  useEffect(() => {
+    setNotifications(processedNotifications);
+    setUnreadCount(processedNotifications.filter(n => !n.read).length);
+  }, [processedNotifications]);
 
   const markAsRead = (notificationId: string) => {
     setNotifications(prev => 

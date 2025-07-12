@@ -7,6 +7,7 @@ from .views import (
     ApproveVisitAPIView,
     RejectVisitAPIView,
     PendingVisitsAPIView,
+    PendingApprovalsAPIView,
     LoginAPIView,
     LogoutAPIView,
     UserInfoAPIView,
@@ -18,6 +19,7 @@ from .views import (
     ConvertScheduledToWalkInAPIView,
     MyVisitorsAPIView,
     DashboardMetricsView,
+    DashboardAnalyticsView,
     RecentActivityView,
     CancelVisitAPIView,   # <-- add
     NoShowVisitAPIView,  # <-- add
@@ -36,6 +38,7 @@ urlpatterns = [
     
     path('visitor-form/<uuid:token>/', CompleteVisitorInfoAPIView.as_view(), name='visitor-form'),
     path('visit-requests/pending/', PendingVisitsAPIView.as_view(), name='pending-visits'),
+    path('visit-requests/pending-approvals/', PendingApprovalsAPIView.as_view(), name='pending-approvals'),
     path('visit-requests/<int:pk>/approve/', ApproveVisitAPIView.as_view(), name='approve-visit'),
     path('visit-requests/<int:pk>/reject/', RejectVisitAPIView.as_view(), name='reject-visit'),
     path('visit-requests/<int:pk>/cancel/', CancelVisitAPIView.as_view(), name='cancel-visit'),  # <-- add
@@ -54,6 +57,7 @@ urlpatterns = [
     path('lobby/convert-to-walkin/<int:visit_id>/', ConvertScheduledToWalkInAPIView.as_view(), name='convert-to-walkin'),
     path('my-visitors/', MyVisitorsAPIView.as_view(), name='my-visitors'),
     path('dashboard-metrics/', DashboardMetricsView.as_view(), name='dashboard-metrics'),
+    path('dashboard-analytics/', DashboardAnalyticsView.as_view(), name='dashboard-analytics'),
     path('recent-activities/', RecentActivityView.as_view(), name='recent-activities'),
     path('lobby/today-all-visits/', TodayAllVisitsAPIView.as_view(), name='today-all-visits'),
     

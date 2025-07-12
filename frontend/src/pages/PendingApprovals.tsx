@@ -41,7 +41,7 @@ const PendingApprovals: React.FC = () => {
 
   const fetchPendingVisits = async () => {
     try {
-      const response = await axiosInstance.get('/api/visit-requests/pending/');
+      const response = await axiosInstance.get('/api/visit-requests/pending-approvals/');
       setPendingVisits(response.data.results || response.data);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to load pending visits');
@@ -97,17 +97,17 @@ const PendingApprovals: React.FC = () => {
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Pending Check-ins</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Pending Approvals</h1>
           <p className="mt-2 text-gray-600">
-            Visitors who are approved but haven't checked in yet
+            Visit requests waiting for your approval
           </p>
         </div>
 
         {pendingVisits.length === 0 ? (
           <div className="bg-white shadow rounded-lg p-8 text-center">
             <ClockIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Pending Check-ins</h3>
-            <p className="text-gray-600">All approved visitors have checked in.</p>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No Pending Approvals</h3>
+            <p className="text-gray-600">All visit requests have been processed.</p>
           </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -116,10 +116,10 @@ const PendingApprovals: React.FC = () => {
                 <div className="px-6 py-4 border-b border-gray-200">
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-medium text-gray-900">
-                      {visit.visitor.full_name}
+                      {visit.visitor ? visit.visitor.full_name : 'Pending Visitor'}
                     </h3>
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                      Pending Check-in
+                      Pending Approval
                     </span>
                   </div>
                   <p className="mt-1 text-sm text-gray-600">{visit.purpose}</p>
@@ -127,24 +127,32 @@ const PendingApprovals: React.FC = () => {
 
                 <div className="px-6 py-4">
                   <div className="space-y-3">
-                    <div className="flex items-center text-sm text-gray-600">
-                      <UserIcon className="h-4 w-4 mr-2" />
-                      <span>{visit.visitor.full_name}</span>
-                    </div>
-                    <div className="flex items-center text-sm text-gray-600">
-                      <EnvelopeIcon className="h-4 w-4 mr-2" />
-                      <span>{visit.visitor.email}</span>
-                    </div>
-                    {visit.visitor.contact && (
-                      <div className="flex items-center text-sm text-gray-600">
-                        <PhoneIcon className="h-4 w-4 mr-2" />
-                        <span>{visit.visitor.contact}</span>
-                      </div>
-                    )}
-                    {visit.visitor.address && (
-                      <div className="flex items-center text-sm text-gray-600">
-                        <MapPinIcon className="h-4 w-4 mr-2" />
-                        <span className="truncate">{visit.visitor.address}</span>
+                    {visit.visitor ? (
+                      <>
+                        <div className="flex items-center text-sm text-gray-600">
+                          <UserIcon className="h-4 w-4 mr-2" />
+                          <span>{visit.visitor.full_name}</span>
+                        </div>
+                        <div className="flex items-center text-sm text-gray-600">
+                          <EnvelopeIcon className="h-4 w-4 mr-2" />
+                          <span>{visit.visitor.email}</span>
+                        </div>
+                        {visit.visitor.contact && (
+                          <div className="flex items-center text-sm text-gray-600">
+                            <PhoneIcon className="h-4 w-4 mr-2" />
+                            <span>{visit.visitor.contact}</span>
+                          </div>
+                        )}
+                        {visit.visitor.address && (
+                          <div className="flex items-center text-sm text-gray-600">
+                            <MapPinIcon className="h-4 w-4 mr-2" />
+                            <span className="truncate">{visit.visitor.address}</span>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-sm text-gray-500 italic">
+                        Visitor information not yet provided
                       </div>
                     )}
                     <div className="flex items-center text-sm text-gray-600">
@@ -154,8 +162,24 @@ const PendingApprovals: React.FC = () => {
                   </div>
 
                   <div className="mt-6">
-                    <div className="text-center text-sm text-gray-500">
-                      This visitor is approved and waiting to check in at the lobby
+                    <div className="text-center text-sm text-gray-500 mb-4">
+                      This visit request is waiting for your approval
+                    </div>
+                    <div className="flex space-x-3">
+                      <button
+                        onClick={() => handleApproval(visit.id, 'approve')}
+                        className="flex-1 bg-green-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                      >
+                        <CheckCircleIcon className="h-4 w-4 inline mr-2" />
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => handleApproval(visit.id, 'reject')}
+                        className="flex-1 bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                      >
+                        <XCircleIcon className="h-4 w-4 inline mr-2" />
+                        Reject
+                      </button>
                     </div>
                   </div>
                 </div>

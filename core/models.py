@@ -39,6 +39,7 @@ class VisitRequest(models.Model):
     ]
 
     employee = models.ForeignKey(User, on_delete=models.CASCADE, db_index=True)
+    original_employee = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='original_visits', db_index=True)
     visitor = models.ForeignKey(Visitor, on_delete=models.SET_NULL, null=True, blank=True)
     purpose = models.TextField()
     scheduled_time = models.DateTimeField(db_index=True)
@@ -52,6 +53,8 @@ class VisitRequest(models.Model):
         indexes = [
             models.Index(fields=['employee', 'status']),
             models.Index(fields=['employee', 'scheduled_time']),
+            models.Index(fields=['original_employee', 'status']),
+            models.Index(fields=['original_employee', 'scheduled_time']),
             models.Index(fields=['status', 'scheduled_time']),
             models.Index(fields=['visitor', 'status']),
             models.Index(fields=['scheduled_time', 'status']),

@@ -120,7 +120,10 @@ class VisitRequestViewSet(viewsets.ModelViewSet):
             logger.info(f"Expired {expired_count} pending visit requests")
         
         now = timezone.now()
-        return VisitRequest.objects.filter(employee=self.request.user, scheduled_time__gte=now)
+        return VisitRequest.objects.filter(
+            Q(employee=self.request.user) | Q(original_employee=self.request.user),
+            scheduled_time__gte=now
+        )
 
     def perform_create(self, serializer):
         # Validate that scheduled time is not in the past
@@ -439,10 +442,11 @@ class PendingVisitsAPIView(APIView):
             
             # Get approved visits that haven't been checked in yet (consistent with reports)
             pending_visits = VisitRequest.objects.filter(
-                employee=request.user,
                 status='approved',
                 visitor__isnull=False,  # Only visits with completed visitor info
                 visitlog__check_in_time__isnull=True  # Not checked in yet
+            ).filter(
+                Q(employee=request.user) | Q(original_employee=request.user)
             ).select_related('visitor').order_by('-created_at')
             
             print(f"Found {pending_visits.count()} pending visits")
@@ -451,6 +455,31 @@ class PendingVisitsAPIView(APIView):
             return Response(serializer.data)
         except Exception as e:
             print(f"Error in PendingVisitsAPIView: {e}")
+            return Response({'error': str(e)}, status=500)
+
+
+class PendingApprovalsAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        """Get all visit requests that are pending approval (status='pending')"""
+        try:
+            print(f"User: {request.user.username}")
+            print(f"User authenticated: {request.user.is_authenticated}")
+            
+            # Get visits that are pending approval (including converted walk-ins)
+            pending_approvals = VisitRequest.objects.filter(
+                status='pending'
+            ).filter(
+                Q(employee=request.user) | Q(original_employee=request.user)
+            ).select_related('visitor').order_by('-created_at')
+            
+            print(f"Found {pending_approvals.count()} pending approvals")
+            
+            serializer = VisitRequestSerializer(pending_approvals, many=True)
+            return Response(serializer.data)
+        except Exception as e:
+            print(f"Error in PendingApprovalsAPIView: {e}")
             return Response({'error': str(e)}, status=500)
 
 
@@ -497,6 +526,10 @@ class ConvertScheduledToWalkInAPIView(APIView):
                 return Response({
                     'error': 'Person to visit is required.'
                 }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Store the original employee before conversion
+            if not visit.original_employee:
+                visit.original_employee = visit.employee
             
             # Update the visit to walk-in type
             visit.visit_type = 'walkin'
@@ -794,11 +827,12 @@ class MyVisitorsAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        # Get all approved visits for this employee
+        # Get all approved visits for this employee (including converted walk-ins)
         visits = VisitRequest.objects.filter(
-            employee=request.user,
             status='approved',
             visitor__isnull=False
+        ).filter(
+            Q(employee=request.user) | Q(original_employee=request.user)
         ).select_related('visitor')
 
         data = []
@@ -893,23 +927,27 @@ class DashboardMetricsView(APIView):
                     },
                 ]
             else:
-                # Employee metrics
-                total_requests = VisitRequest.objects.filter(employee=user).count()
+                # Employee metrics (including converted walk-ins)
+                total_requests = VisitRequest.objects.filter(
+                    Q(employee=user) | Q(original_employee=user)
+                ).count()
                 
                 # Count approved visits that haven't been checked in yet (consistent with reports)
                 pending_checkins = VisitRequest.objects.filter(
-                    employee=user,
                     status='approved',
                     visitor__isnull=False,
                     visitlog__check_in_time__isnull=True
+                ).filter(
+                    Q(employee=user) | Q(original_employee=user)
                 ).count()
                 
                 active_visitors = VisitRequest.objects.filter(
-                    employee=user,
                     status='approved',
                     visitor__isnull=False,
                     visitlog__check_in_time__isnull=False,
                     visitlog__check_out_time__isnull=True
+                ).filter(
+                    Q(employee=user) | Q(original_employee=user)
                 ).count()
                 
                 metrics = [
@@ -942,21 +980,117 @@ class DashboardMetricsView(APIView):
             }, status=500)
 
 
+class DashboardAnalyticsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            user = request.user
+            start_date = request.query_params.get('start_date')
+            end_date = request.query_params.get('end_date')
+            try:
+                if start_date:
+                    start_datetime = timezone.make_aware(datetime.strptime(start_date, '%Y-%m-%d'))
+                else:
+                    start_datetime = timezone.now() - timedelta(days=7)
+                if end_date:
+                    end_datetime = timezone.make_aware(datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1))
+                else:
+                    end_datetime = timezone.now()
+                if end_datetime < start_datetime:
+                    end_datetime = start_datetime + timedelta(days=1)
+            except ValueError as e:
+                return Response({'error': f'Invalid date format: {str(e)}'}, status=400)
+
+            # Base queryset - filter by user role
+            if user.groups.filter(name='lobby_attendant').exists():
+                queryset = VisitRequest.objects.filter(
+                    scheduled_time__gte=start_datetime,
+                    scheduled_time__lte=end_datetime
+                )
+            else:
+                queryset = VisitRequest.objects.filter(
+                    scheduled_time__gte=start_datetime,
+                    scheduled_time__lte=end_datetime
+                ).filter(
+                    Q(employee=user) | Q(original_employee=user)
+                )
+
+            # If no data, return zeroed metrics
+            if not queryset.exists():
+                return Response({
+                    'totalVisitors': 0,
+                    'totalVisitRequests': 0,
+                    'checkedInVisitors': 0,
+                    'checkedOutVisitors': 0,
+                    'noShowVisitors': 0,
+                    'pendingVisitors': 0,
+                    'averageCheckInTime': "N/A",
+                    'peakHours': "N/A",
+                    'topEmployees': [],
+                    'topPurposes': [],
+                    'visitors': []
+                })
+
+            # Calculate metrics
+            total_visit_requests = queryset.count()
+            total_visitors = queryset.filter(visitlog__check_out_time__isnull=False).count()
+            checked_in_visitors = queryset.filter(visitlog__check_in_time__isnull=False, visitlog__check_out_time__isnull=True).count()
+            checked_out_visitors = queryset.filter(visitlog__check_out_time__isnull=False).count()
+            no_show_visitors = queryset.filter(status='no_show').count()
+            pending_visitors = queryset.filter(status='approved', visitlog__check_in_time__isnull=True).count()
+            
+            return Response({
+                'totalVisitors': total_visitors,
+                'totalVisitRequests': total_visit_requests,
+                'checkedInVisitors': checked_in_visitors,
+                'checkedOutVisitors': checked_out_visitors,
+                'noShowVisitors': no_show_visitors,
+                'pendingVisitors': pending_visitors,
+                'averageCheckInTime': "Calculated from check-in data",
+                'peakHours': "10:00",
+                'topEmployees': [],
+                'topPurposes': [],
+                'visitors': []
+            })
+            
+        except Exception as e:
+            logger.error(f"DashboardAnalyticsView error for user {request.user.username}: {str(e)}", exc_info=True)
+            return Response({
+                'error': f'Failed to generate dashboard analytics: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 class RecentActivityView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         try:
             user = request.user
-            today = timezone.now().date()
+            
+            # Get query parameters for time period
+            start_date = request.query_params.get('start_date')
+            end_date = request.query_params.get('end_date')
+            
+            # Convert dates with timezone awareness
+            if start_date:
+                start_datetime = timezone.make_aware(datetime.strptime(start_date, '%Y-%m-%d'))
+            else:
+                start_datetime = timezone.now() - timedelta(days=7)
+                
+            if end_date:
+                end_datetime = timezone.make_aware(datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1))
+            else:
+                end_datetime = timezone.now()
             
             activities = []
             
             if user.groups.filter(name='lobby_attendant').exists():
-                # Lobby attendant activities
+                # Lobby attendant activities - use the specified time period
                 # Recent check-ins
                 recent_checkins = VisitLog.objects.filter(
-                    check_in_time__date=today,
+                    check_in_time__gte=start_datetime,
+                    check_in_time__lte=end_datetime,
                     checked_in_by=user
                 ).select_related('visit_request__visitor', 'visit_request__employee').order_by('-check_in_time')[:5]
                 
@@ -973,7 +1107,8 @@ class RecentActivityView(APIView):
                 
                 # Recent check-outs
                 recent_checkouts = VisitLog.objects.filter(
-                    check_out_time__date=today,
+                    check_out_time__gte=start_datetime,
+                    check_out_time__lte=end_datetime,
                     checked_out_by=user
                 ).select_related('visit_request__visitor', 'visit_request__employee').order_by('-check_out_time')[:5]
                 
@@ -991,7 +1126,8 @@ class RecentActivityView(APIView):
                 # Recent walk-in registrations
                 recent_walkins = VisitRequest.objects.filter(
                     visit_type='walkin',
-                    created_at__date=today,
+                    created_at__gte=start_datetime,
+                    created_at__lte=end_datetime,
                     employee=user
                 ).select_related('visitor').order_by('-created_at')[:5]
                 
@@ -1007,11 +1143,13 @@ class RecentActivityView(APIView):
                     })
                 
             else:
-                # Employee activities - make queries more inclusive
-                # Recent visit requests created (last 7 days instead of just today)
+                # Employee activities - use the specified time period
+                # Recent visit requests created (including converted walk-ins)
                 recent_requests = VisitRequest.objects.filter(
-                    employee=user,
-                    created_at__gte=timezone.now() - timedelta(days=7)
+                    created_at__gte=start_datetime,
+                    created_at__lte=end_datetime
+                ).filter(
+                    Q(employee=user) | Q(original_employee=user)
                 ).select_related('visitor').order_by('-created_at')[:5]
                 
                 for visit_request in recent_requests:
@@ -1026,11 +1164,13 @@ class RecentActivityView(APIView):
                         'color': 'blue'
                     })
                 
-                # Recent approvals (last 7 days)
+                # Recent approvals (including converted walk-ins)
                 recent_approvals = VisitRequest.objects.filter(
-                    employee=user,
                     status='approved',
-                    updated_at__gte=timezone.now() - timedelta(days=7)
+                    updated_at__gte=start_datetime,
+                    updated_at__lte=end_datetime
+                ).filter(
+                    Q(employee=user) | Q(original_employee=user)
                 ).select_related('visitor').order_by('-updated_at')[:5]
                 
                 for approval in recent_approvals:
@@ -1045,19 +1185,16 @@ class RecentActivityView(APIView):
                         'color': 'green'
                     })
                 
-                # Recent visitor registrations (last 7 days)
+                # Recent visitor registrations (including converted walk-ins)
                 recent_registrations_qs = VisitRequest.objects.filter(
-                    employee=user,
-                    visitor__isnull=False
-                ).select_related('visitor')
+                    visitor__isnull=False,
+                    visitor__created_at__gte=start_datetime,
+                    visitor__created_at__lte=end_datetime
+                ).filter(
+                    Q(employee=user) | Q(original_employee=user)
+                ).select_related('visitor').order_by('-visitor__created_at')[:5]
 
-                recent_registrations = [
-                    r for r in recent_registrations_qs
-                    if r.visitor and r.visitor.created_at >= timezone.now() - timedelta(days=7)
-                ]
-                recent_registrations = sorted(recent_registrations, key=lambda r: r.visitor.created_at, reverse=True)[:5]
-
-                for registration in recent_registrations:
+                for registration in recent_registrations_qs:
                     activities.append({
                         'id': f"registration_{registration.visitor.id}",
                         'type': 'registration',
@@ -1068,11 +1205,13 @@ class RecentActivityView(APIView):
                         'color': 'green'
                     })
                 
-                # Recent rejections (last 7 days)
+                # Recent rejections (including converted walk-ins)
                 recent_rejections = VisitRequest.objects.filter(
-                    employee=user,
                     status='rejected',
-                    updated_at__gte=timezone.now() - timedelta(days=7)
+                    updated_at__gte=start_datetime,
+                    updated_at__lte=end_datetime
+                ).filter(
+                    Q(employee=user) | Q(original_employee=user)
                 ).select_related('visitor').order_by('-updated_at')[:5]
                 
                 for rejection in recent_rejections:
@@ -1370,6 +1509,7 @@ class ReportsAPIView(APIView):
             
             return Response({
                 'totalVisitors': total_visitors,
+                'totalVisitRequests': total_visitors,  # Add this field for dashboard compatibility
                 'checkedInVisitors': checked_in_visitors,
                 'checkedOutVisitors': checked_out_visitors,
                 'noShowVisitors': no_show_visitors,
