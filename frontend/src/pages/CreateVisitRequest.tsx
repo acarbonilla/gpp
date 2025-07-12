@@ -7,7 +7,12 @@ import {
   ClipboardDocumentIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,
-  ExclamationTriangleIcon
+  ExclamationTriangleIcon,
+  SparklesIcon,
+  CalendarIcon,
+  DocumentTextIcon,
+  ArrowLeftIcon,
+  ShareIcon
 } from '@heroicons/react/24/outline';
 import axiosInstance from '../api/axiosInstance';
 
@@ -124,76 +129,114 @@ const CreateVisitRequest: React.FC = () => {
 
   if (createdRequest) {
     return (
-      <div className="max-w-2xl mx-auto">
-        <div className="bg-white shadow-lg rounded-lg overflow-hidden">
-          <div className="px-6 py-8">
-            <div className="flex items-center justify-center mb-6">
-              <CheckCircleIcon className="h-12 w-12 text-green-500" />
-            </div>
-            
-            <h2 className="text-2xl font-bold text-center text-gray-900 mb-4">
-              Visit Request Created Successfully!
-            </h2>
-            
-            <div className="bg-gray-50 rounded-lg p-4 mb-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Visit Details</h3>
-              <div className="space-y-2 text-sm text-gray-600">
-                <p><span className="font-medium">Purpose:</span> {createdRequest.purpose}</p>
-                <p><span className="font-medium">Scheduled Time:</span> {new Date(createdRequest.scheduled_time).toLocaleString()}</p>
-                <p><span className="font-medium">Type:</span> {createdRequest.visit_type}</p>
-                <p><span className="font-medium">Status:</span> <span className="capitalize">{createdRequest.status}</span></p>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 p-6">
+        <div className="max-w-3xl mx-auto">
+          {/* Success Card */}
+          <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-green-500 to-emerald-600 px-8 py-6">
+              <div className="flex items-center justify-center space-x-3">
+                <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm">
+                  <CheckCircleIcon className="h-8 w-8 text-white" />
+                </div>
+                <h2 className="text-3xl font-bold text-white">
+                  Visit Request Created Successfully!
+                </h2>
               </div>
             </div>
 
-            {createdRequest.invitation_link && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                <h3 className="text-lg font-medium text-blue-900 mb-2">Invitation Link</h3>
-                <p className="text-sm text-blue-700 mb-3">
-                  Share this link with your visitor to complete their registration:
-                </p>
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="text"
-                    value={createdRequest.invitation_link}
-                    readOnly
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
-                  />
-                  <button
-                    onClick={copyToClipboard}
-                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                  >
-                    {copied ? (
-                      <>
-                        <CheckCircleIcon className="h-4 w-4 mr-2" />
-                        Copied!
-                      </>
-                    ) : (
-                      <>
-                        <ClipboardDocumentIcon className="h-4 w-4 mr-2" />
-                        Copy
-                      </>
-                    )}
-                  </button>
+            <div className="p-8 space-y-8">
+              {/* Visit Details */}
+              <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-6 border border-blue-200/50">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="p-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg">
+                    <DocumentTextIcon className="h-5 w-5 text-white" />
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-900">Visit Details</h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-gray-600">Purpose</p>
+                    <p className="text-lg font-semibold text-gray-900 bg-white/60 rounded-lg p-3">{createdRequest.purpose}</p>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-gray-600">Scheduled Time</p>
+                    <p className="text-lg font-semibold text-gray-900 bg-white/60 rounded-lg p-3">{new Date(createdRequest.scheduled_time).toLocaleString()}</p>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-gray-600">Type</p>
+                    <p className="text-lg font-semibold text-gray-900 bg-white/60 rounded-lg p-3 capitalize">{createdRequest.visit_type}</p>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-gray-600">Status</p>
+                    <span className={`inline-flex px-3 py-2 rounded-lg text-sm font-semibold ${
+                      createdRequest.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                      createdRequest.status === 'approved' ? 'bg-green-100 text-green-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {createdRequest.status.charAt(0).toUpperCase() + createdRequest.status.slice(1)}
+                    </span>
+                  </div>
                 </div>
               </div>
-            )}
 
-            <div className="flex space-x-4">
-              <button
-                onClick={() => {
-                  setCreatedRequest(null);
-                  setFormData({ purpose: '', scheduled_time: '' });
-                }}
-                className="flex-1 bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition-colors"
-              >
-                Create Another Request
-              </button>
-              <button
-                onClick={() => navigate('/')}
-                className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
-              >
-                Go to Dashboard
-              </button>
+              {/* Invitation Link */}
+              {createdRequest.invitation_link && (
+                <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl p-6 border border-emerald-200/50">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="p-2 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg">
+                      <ShareIcon className="h-5 w-5 text-white" />
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-900">Invitation Link</h3>
+                  </div>
+                  <p className="text-gray-700 mb-4 font-medium">
+                    Share this link with your visitor to complete their registration:
+                  </p>
+                  <div className="flex items-center space-x-3">
+                    <input
+                      type="text"
+                      value={createdRequest.invitation_link}
+                      readOnly
+                      className="flex-1 px-4 py-3 border border-gray-300 rounded-xl text-sm bg-white/80 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    />
+                    <button
+                      onClick={copyToClipboard}
+                      className="inline-flex items-center px-6 py-3 border border-transparent text-sm font-semibold rounded-xl text-white bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 shadow-lg hover:shadow-xl transition-all duration-200"
+                    >
+                      {copied ? (
+                        <>
+                          <CheckCircleIcon className="h-5 w-5 mr-2" />
+                          Copied!
+                        </>
+                      ) : (
+                        <>
+                          <ClipboardDocumentIcon className="h-5 w-5 mr-2" />
+                          Copy Link
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex space-x-4 pt-4">
+                <button
+                  onClick={() => {
+                    setCreatedRequest(null);
+                    setFormData({ purpose: '', scheduled_time: '' });
+                  }}
+                  className="flex-1 bg-gradient-to-r from-gray-500 to-gray-600 text-white px-6 py-3 rounded-xl font-semibold hover:from-gray-600 hover:to-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 shadow-lg hover:shadow-xl transition-all duration-200"
+                >
+                  Create Another Request
+                </button>
+                <button
+                  onClick={() => navigate('/')}
+                  className="flex-1 bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-3 rounded-xl font-semibold hover:from-blue-600 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-lg hover:shadow-xl transition-all duration-200"
+                >
+                  Go to Dashboard
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -202,91 +245,133 @@ const CreateVisitRequest: React.FC = () => {
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <div className="bg-white shadow-lg rounded-lg overflow-hidden">
-        <div className="px-6 py-8">
-          <div className="flex items-center mb-6">
-            <PlusIcon className="h-8 w-8 text-blue-600 mr-3" />
-            <h1 className="text-2xl font-bold text-gray-900">Create Scheduled Visit Request</h1>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 p-6">
+      <div className="max-w-3xl mx-auto">
+        {/* Enhanced Form Card */}
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 overflow-hidden">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-blue-500 to-purple-600 px-8 py-6">
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => navigate('/')}
+                className="p-2 bg-white/20 rounded-lg backdrop-blur-sm hover:bg-white/30 transition-colors duration-200"
+              >
+                <ArrowLeftIcon className="h-6 w-6 text-white" />
+              </button>
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
+                  <PlusIcon className="h-8 w-8 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-3xl font-bold text-white">Create Visit Request</h1>
+                  <p className="text-blue-100 font-medium">Schedule a new visitor appointment</p>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {error && (
-            <div className="mb-6 bg-red-50 border border-red-200 rounded-md p-4">
-              <div className="flex">
-                <ExclamationCircleIcon className="h-5 w-5 text-red-400" />
-                <div className="ml-3">
-                  <h3 className="text-sm font-medium text-red-800">Error</h3>
-                  <div className="mt-2 text-sm text-red-700">{error}</div>
+          <div className="p-8 space-y-6">
+            {/* Error Display */}
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-2xl p-6">
+                <div className="flex items-start space-x-3">
+                  <div className="p-2 bg-red-100 rounded-lg">
+                    <ExclamationCircleIcon className="h-5 w-5 text-red-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-red-800 mb-2">Error</h3>
+                    <p className="text-red-700 leading-relaxed">{error}</p>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {timeWarning && (
-            <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-md p-4">
-              <div className="flex">
-                <ExclamationTriangleIcon className="h-5 w-5 text-yellow-400" />
-                <div className="ml-3">
-                  <h3 className="text-sm font-medium text-yellow-800">Time Warning</h3>
-                  <div className="mt-2 text-sm text-yellow-700">{timeWarning}</div>
+            {/* Time Warning */}
+            {timeWarning && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-6">
+                <div className="flex items-start space-x-3">
+                  <div className="p-2 bg-yellow-100 rounded-lg">
+                    <ExclamationTriangleIcon className="h-5 w-5 text-yellow-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-yellow-800 mb-2">Time Warning</h3>
+                    <p className="text-yellow-700 leading-relaxed">{timeWarning}</p>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label htmlFor="purpose" className="block text-sm font-medium text-gray-700 mb-2">
-                Purpose of Visit *
-              </label>
-              <textarea
-                id="purpose"
-                name="purpose"
-                rows={4}
-                required
-                value={formData.purpose}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Describe the purpose of the visit..."
-              />
-            </div>
+            {/* Enhanced Form */}
+            <form onSubmit={handleSubmit} className="space-y-8">
+              {/* Purpose Field */}
+              <div className="space-y-3">
+                <label htmlFor="purpose" className="flex items-center space-x-2">
+                  <div className="p-1 bg-gradient-to-r from-blue-500 to-purple-600 rounded">
+                    <DocumentTextIcon className="h-4 w-4 text-white" />
+                  </div>
+                  <span className="text-lg font-semibold text-gray-900">Purpose of Visit *</span>
+                </label>
+                <textarea
+                  id="purpose"
+                  name="purpose"
+                  rows={4}
+                  required
+                  value={formData.purpose}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white/80 backdrop-blur-sm transition-all duration-200 resize-none"
+                  placeholder="Describe the purpose of the visit..."
+                />
+              </div>
 
-            <div>
-              <label htmlFor="scheduled_time" className="block text-sm font-medium text-gray-700 mb-2">
-                Scheduled Time *
-              </label>
-              <input
-                type="datetime-local"
-                id="scheduled_time"
-                name="scheduled_time"
-                required
-                value={formData.scheduled_time}
-                onChange={handleInputChange}
-                min={new Date().toISOString().slice(0, 16)} // Set minimum to current time
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              />
-              <p className="mt-1 text-sm text-gray-500">
-                Please select a future date and time for the visit.
-              </p>
-            </div>
+              {/* Scheduled Time Field */}
+              <div className="space-y-3">
+                <label htmlFor="scheduled_time" className="flex items-center space-x-2">
+                  <div className="p-1 bg-gradient-to-r from-emerald-500 to-teal-600 rounded">
+                    <CalendarIcon className="h-4 w-4 text-white" />
+                  </div>
+                  <span className="text-lg font-semibold text-gray-900">Scheduled Time *</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  id="scheduled_time"
+                  name="scheduled_time"
+                  required
+                  value={formData.scheduled_time}
+                  onChange={handleInputChange}
+                  min={new Date().toISOString().slice(0, 16)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white/80 backdrop-blur-sm transition-all duration-200"
+                />
+                <p className="text-sm text-gray-600 font-medium">
+                  Please select a future date and time for the visit.
+                </p>
+              </div>
 
-            <div className="flex space-x-4 pt-4">
-              <button
-                type="button"
-                onClick={() => navigate('/')}
-                className="flex-1 bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isSubmitting || !!timeWarning}
-                className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {isSubmitting ? 'Creating...' : 'Create Visit Request'}
-              </button>
-            </div>
-          </form>
+              {/* Action Buttons */}
+              <div className="flex space-x-4 pt-6">
+                <button
+                  type="button"
+                  onClick={() => navigate('/')}
+                  className="flex-1 bg-gradient-to-r from-gray-500 to-gray-600 text-white px-6 py-3 rounded-xl font-semibold hover:from-gray-600 hover:to-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 shadow-lg hover:shadow-xl transition-all duration-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !!timeWarning}
+                  className="flex-1 bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-3 rounded-xl font-semibold hover:from-blue-600 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transition-all duration-200"
+                >
+                  {isSubmitting ? (
+                    <div className="flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                      Creating...
+                    </div>
+                  ) : (
+                    'Create Visit Request'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
     </div>

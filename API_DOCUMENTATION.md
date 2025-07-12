@@ -580,6 +580,39 @@ Authorization: Bearer your_access_token
 
 ## 📊 **Reports**
 
+### **Get Employee List**
+```http
+GET /api/employees/
+```
+
+**Headers:**
+```
+Authorization: Bearer your_access_token
+```
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "username": "jane_doe",
+    "display_name": "Jane Doe (jane_doe)"
+  },
+  {
+    "id": 2,
+    "username": "john_smith",
+    "display_name": "John Smith (john_smith)"
+  },
+  {
+    "id": 3,
+    "username": "attendant",
+    "display_name": "Lobby Attendant (attendant)"
+  }
+]
+```
+
+**Note:** This endpoint returns all users (employees and lobby attendants) who have hosted visitors, sorted by first name and last name. The display_name format is "First Last (username)" or just "username" if no name is set.
+
 ### **Generate Reports**
 ```http
 GET /api/generate-reports/

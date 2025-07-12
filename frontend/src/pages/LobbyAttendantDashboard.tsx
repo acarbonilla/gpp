@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axiosInstance from '../api/axiosInstance';
 import { useVisitors } from '../components/VisitorContext';
+import { useQuery, QueryFunction, useQueryClient } from '@tanstack/react-query';
 import { 
   UserGroupIcon, 
   ClockIcon,
@@ -37,24 +38,31 @@ interface DashboardStats {
   noShowVisitors: number;
 }
 
-
+interface Visitor {
+  visit_id: number;
+  visitor_id: number;
+  visitor_name: string;
+  visitor_email: string;
+  employee_name: string;
+  purpose?: string;
+  scheduled_time: string;
+  visit_type: string;
+  is_checked_in: boolean;
+  check_in_time?: string;
+  is_checked_out: boolean;
+  check_out_time?: string;
+  status: string;
+  notes?: string;
+  updated_at?: string;
+}
 
 const LobbyAttendantDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const [stats, setStats] = useState<DashboardStats>({
-    totalVisitors: 0,
-    checkedInVisitors: 0,
-    checkedOutVisitors: 0,
-    pendingCheckIns: 0,
-    noShowVisitors: 0
-  });
-
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [markingNoShow, setMarkingNoShow] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [filteredVisitors, setFilteredVisitors] = useState<any[]>([]);
+  const [filteredVisitors, setFilteredVisitors] = useState<Visitor[]>([]);
   const [showAnalytics, setShowAnalytics] = useState(true);
   const [showBulkActions, setShowBulkActions] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
@@ -63,7 +71,7 @@ const LobbyAttendantDashboard: React.FC = () => {
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [visitorsPerPage, setVisitorsPerPage] = useState(10);
-  const [paginatedVisitors, setPaginatedVisitors] = useState<any[]>([]);
+  const [paginatedVisitors, setPaginatedVisitors] = useState<Visitor[]>([]);
   
   const [dateRange, setDateRange] = useState<{ startDate: Date; endDate: Date; key: string }[]>([
     {
@@ -80,13 +88,91 @@ const LobbyAttendantDashboard: React.FC = () => {
     return localStorage.getItem('accessToken');
   };
 
+  // Enhanced fetch function with React Query
+  const fetchVisitorsForRange: QueryFunction<Visitor[]> = useCallback(async ({ queryKey }) => {
+    const [_, startDate, endDate] = queryKey as [string, string, string];
+    const token = getAuthToken();
+    if (!token) {
+      throw new Error('No authentication token found. Please login.');
+    }
+    
+    const response = await axiosInstance.get(`/api/lobby/today-all-visits/?start_date=${startDate}&end_date=${endDate}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    // Sort visitors by most recent date and time
+    const sortedVisitors = response.data.sort((a: Visitor, b: Visitor) => {
+      const dateA = new Date(a.scheduled_time);
+      const dateB = new Date(b.scheduled_time);
+      return dateB.getTime() - dateA.getTime(); // Most recent first
+    });
+    
+    return sortedVisitors;
+  }, []);
+
+  // React Query for visitors data
+  const { startDate, endDate } = dateRange[0];
+  const startDateStr = format(startDate, 'yyyy-MM-dd');
+  const endDateStr = format(endDate, 'yyyy-MM-dd');
+
+    const {
+    data: visitorsData, 
+    isLoading: visitorsLoading, 
+    isError: visitorsError, 
+    error: visitorsErrorObj,
+    refetch: refetchVisitors 
+  } = useQuery<Visitor[]>({
+    queryKey: ['lobby-visitors', startDateStr, endDateStr],
+    queryFn: fetchVisitorsForRange,
+    refetchInterval: 30000, // 30 seconds
+    refetchIntervalInBackground: true,
+    staleTime: 30000, // Consider data fresh for 30 seconds
+    gcTime: 5 * 60 * 1000, // Cache for 5 minutes (renamed from cacheTime in React Query v4+)
+  });
+
+  // Update context when data changes
+  useEffect(() => {
+    if (visitorsData) {
+      setContextVisitors(visitorsData as Visitor[]);
+    }
+  }, [visitorsData, setContextVisitors]);
+
+  // Calculate stats from visitors data
+  const stats: DashboardStats = React.useMemo(() => {
+    if (!visitorsData || !Array.isArray(visitorsData)) {
+      return {
+        totalVisitors: 0,
+        checkedInVisitors: 0,
+        checkedOutVisitors: 0,
+        pendingCheckIns: 0,
+        noShowVisitors: 0
+      };
+    }
+
+    const totalVisitors = visitorsData.length;
+    const checkedInVisitors = visitorsData.filter((v: Visitor) => v.is_checked_in).length;
+    const checkedOutVisitors = visitorsData.filter((v: Visitor) => v.is_checked_out).length;
+    const pendingCheckIns = visitorsData.filter((v: Visitor) => !v.is_checked_in && v.status === 'approved').length;
+    const noShowVisitors = visitorsData.filter((v: Visitor) => v.status === 'no_show').length;
+
+    return {
+      totalVisitors,
+      checkedInVisitors,
+      checkedOutVisitors,
+      pendingCheckIns,
+      noShowVisitors
+    };
+  }, [visitorsData]);
+
   const markAsNoShow = async (visitId: number) => {
     try {
       setMarkingNoShow(visitId);
       const token = getAuthToken();
       if (!token) {
-        setError('No authentication token found. Please login.');
-        return;
+        throw new Error('No authentication token found. Please login.');
       }
 
       await axiosInstance.post(`/api/visit-requests/${visitId}/no-show/`, {}, {
@@ -96,8 +182,8 @@ const LobbyAttendantDashboard: React.FC = () => {
         },
       });
 
-      // Refresh dashboard data to update stats and activity
-      await fetchDashboardData();
+      // Invalidate and refetch visitors data
+      await queryClient.invalidateQueries({ queryKey: ['lobby-visitors'] });
       
       alert('Visitor marked as no show successfully!');
     } catch (err: any) {
@@ -113,8 +199,7 @@ const LobbyAttendantDashboard: React.FC = () => {
       setMarkingNoShow(-1); // Special value for bulk operation
       const token = getAuthToken();
       if (!token) {
-        setError('No authentication token found. Please login.');
-        return;
+        throw new Error('No authentication token found. Please login.');
       }
 
       // Process each visitor
@@ -127,8 +212,8 @@ const LobbyAttendantDashboard: React.FC = () => {
         });
       }
 
-      // Refresh dashboard data
-      await fetchDashboardData();
+      // Invalidate and refetch visitors data
+      await queryClient.invalidateQueries({ queryKey: ['lobby-visitors'] });
       alert(`Successfully marked ${visitIds.length} visitors as no show!`);
     } catch (err: any) {
       console.error('Error in bulk no-show operation:', err);
@@ -142,8 +227,7 @@ const LobbyAttendantDashboard: React.FC = () => {
     try {
       const token = getAuthToken();
       if (!token) {
-        setError('No authentication token found. Please login.');
-        return;
+        throw new Error('No authentication token found. Please login.');
       }
 
       // Process each visitor
@@ -156,8 +240,8 @@ const LobbyAttendantDashboard: React.FC = () => {
         });
       }
 
-      // Refresh dashboard data
-      await fetchDashboardData();
+      // Invalidate and refetch visitors data
+      await queryClient.invalidateQueries({ queryKey: ['lobby-visitors'] });
       alert(`Successfully checked in ${visitIds.length} visitors!`);
     } catch (err: any) {
       console.error('Error in bulk check-in operation:', err);
@@ -169,8 +253,7 @@ const LobbyAttendantDashboard: React.FC = () => {
     try {
       const token = getAuthToken();
       if (!token) {
-        setError('No authentication token found. Please login.');
-        return;
+        throw new Error('No authentication token found. Please login.');
       }
 
       // Process each visitor
@@ -183,8 +266,8 @@ const LobbyAttendantDashboard: React.FC = () => {
         });
       }
 
-      // Refresh dashboard data
-      await fetchDashboardData();
+      // Invalidate and refetch visitors data
+      await queryClient.invalidateQueries({ queryKey: ['lobby-visitors'] });
       alert(`Successfully checked out ${visitIds.length} visitors!`);
     } catch (err: any) {
       console.error('Error in bulk check-out operation:', err);
@@ -192,25 +275,19 @@ const LobbyAttendantDashboard: React.FC = () => {
     }
   };
 
-  const shouldShowNoShowButton = (visitor: any) => {
+  const shouldShowNoShowButton = (visitor: Visitor) => {
     // Always compare in UTC
     const nowUTC = new Date();
     const scheduledUTC = new Date(visitor.scheduled_time);
     
     // Add a small buffer to prevent false positives due to timezone differences
-    const bufferMinutes = 1; // 1 minute buffer
     const timeDiff = nowUTC.getTime() - scheduledUTC.getTime();
-    const minutesLate = timeDiff / (1000 * 60);
-
-    return !visitor.is_checked_in &&
-           visitor.status === 'approved' &&
-           minutesLate >= (15 + bufferMinutes);
+    const minutesDiff = timeDiff / (1000 * 60);
+    
+    return minutesDiff >= 15 && !visitor.is_checked_in && visitor.status === 'approved';
   };
 
-  // Pagination functions
-  const getTotalPages = () => {
-    return Math.ceil(filteredVisitors.length / visitorsPerPage);
-  };
+  const getTotalPages = () => Math.ceil(filteredVisitors.length / visitorsPerPage);
 
   const getPaginatedVisitors = () => {
     const startIndex = (currentPage - 1) * visitorsPerPage;
@@ -218,134 +295,37 @@ const LobbyAttendantDashboard: React.FC = () => {
     return filteredVisitors.slice(startIndex, endIndex);
   };
 
-  const handlePageChange = (page: number) => {
-    setCurrentPage(page);
-  };
-
-  const handlePageSizeChange = (size: number) => {
-    setVisitorsPerPage(size);
-    setCurrentPage(1); // Reset to first page when changing page size
-  };
-
+  const handlePageChange = (page: number) => setCurrentPage(page);
+  const handlePageSizeChange = (size: number) => setVisitorsPerPage(size);
   const goToFirstPage = () => setCurrentPage(1);
   const goToLastPage = () => setCurrentPage(getTotalPages());
   const goToPreviousPage = () => setCurrentPage(prev => Math.max(1, prev - 1));
   const goToNextPage = () => setCurrentPage(prev => Math.min(getTotalPages(), prev + 1));
 
-  const fetchDashboardData = async () => {
-    try {
-      setLoading(true);
-      const token = getAuthToken();
-      if (!token) {
-        setError('No authentication token found. Please login.');
-        return;
-      }
-
-      // Fetch today's visitors for stats
-      const visitorsResponse = await axiosInstance.get('/api/lobby/today-visitors/', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      const approvedVisitors = visitorsResponse.data;
-
-      // Calculate stats
-      const totalVisitors = approvedVisitors.length;
-      const checkedInVisitors = approvedVisitors.filter((v: any) => v.is_checked_in).length;
-      const checkedOutVisitors = approvedVisitors.filter((v: any) => v.is_checked_out).length;
-      const pendingCheckIns = approvedVisitors.filter((v: any) => !v.is_checked_in && v.status === 'approved').length;
-      const noShowVisitors = approvedVisitors.filter((v: any) => v.status === 'no_show').length;
-
-      setStats({
-        totalVisitors,
-        checkedInVisitors,
-        checkedOutVisitors,
-        pendingCheckIns,
-        noShowVisitors
-      });
-
-      setError(null);
-    } catch (err: any) {
-      console.error('Error fetching dashboard data:', err);
-      setError(err.response?.data?.error || 'Failed to fetch dashboard data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Fetch all today's visits for dashboard stats
-  const fetchAllTodayVisits = async () => {
-    try {
-      const token = getAuthToken();
-      if (!token) {
-        setError('No authentication token found. Please login.');
-        return;
-      }
-      const response = await axiosInstance.get('/api/lobby/today-all-visits/', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      // Sort visitors by most recent date and time
-      const sortedVisitors = response.data.sort((a: any, b: any) => {
-        const dateA = new Date(a.scheduled_time);
-        const dateB = new Date(b.scheduled_time);
-        return dateB.getTime() - dateA.getTime(); // Most recent first
-      });
-      
-      setContextVisitors(sortedVisitors);
-      console.log('Dashboard visitors:', sortedVisitors);
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to fetch dashboard visits');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const downloadTodaysVisitorsCSV = async () => {
-    setDownloading(true);
     try {
-      const today = dayjs().format('YYYY-MM-DD');
-      // Filter visitors for today only
-      const todaysVisitors = visitors.filter(v => dayjs(v.scheduled_time).format('YYYY-MM-DD') === today);
-      // Prepare CSV data
-      const headers = [
-        'Visitor Name',
-        'Employee Name',
-        'Purpose',
-        'Scheduled Time',
-        'Check-in Time',
-        'Check-out Time',
-        'Status',
-        'Notes'
-      ];
-      const csvData = todaysVisitors.map(visitor => [
-        visitor.visitor_name || '',
-        visitor.employee_name || '',
-        visitor.purpose || '',
-        dayjs(visitor.scheduled_time).format('YYYY-MM-DD HH:mm'),
-        visitor.check_in_time ? dayjs(visitor.check_in_time).format('YYYY-MM-DD HH:mm') : '',
-        visitor.check_out_time ? dayjs(visitor.check_out_time).format('YYYY-MM-DD HH:mm') : '',
-        visitor.is_checked_in && !visitor.is_checked_out ? 'Checked In' :
-        visitor.is_checked_out ? 'Checked Out' :
-        visitor.status === 'no_show' ? 'No Show' : 'Pending',
-        visitor.notes || ''
-      ]);
-      const csvContent = [
-        headers.join(','),
-        ...csvData.map(row => row.map(cell => `"${cell}"`).join(','))
-      ].join('\n');
-      // Create and download file
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      setDownloading(true);
+      const token = getAuthToken();
+      if (!token) {
+        throw new Error('No authentication token found. Please login.');
+      }
+
+      const { startDate, endDate } = dateRange[0];
+      const start = format(startDate, 'yyyy-MM-dd');
+      const end = format(endDate, 'yyyy-MM-dd');
+
+      const response = await axiosInstance.get(`/api/download-reports/?format=csv&start_date=${start}&end_date=${end}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        responseType: 'blob',
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `weekly_visitors_${today}.csv`);
-      link.style.visibility = 'hidden';
+      link.href = url;
+      link.setAttribute('download', `visitor_records_${start}_to_${end}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -356,71 +336,22 @@ const LobbyAttendantDashboard: React.FC = () => {
     }
   };
 
-  // Fetch visitors for selected date range
-  const fetchVisitorsForRange = async (startDate: Date, endDate: Date) => {
-    try {
-      setLoading(true);
-      const token = getAuthToken();
-      if (!token) {
-        setError('No authentication token found. Please login.');
-        return;
-      }
-      const start = format(startDate, 'yyyy-MM-dd');
-      const end = format(endDate, 'yyyy-MM-dd');
-      const response = await axiosInstance.get(`/api/lobby/today-all-visits/?start_date=${start}&end_date=${end}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      // Sort visitors by most recent date and time
-      const sortedVisitors = response.data.sort((a: any, b: any) => {
-        const dateA = new Date(a.scheduled_time);
-        const dateB = new Date(b.scheduled_time);
-        return dateB.getTime() - dateA.getTime(); // Most recent first
-      });
-      
-      setContextVisitors(sortedVisitors);
-      setError(null);
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to fetch dashboard visits');
-    } finally {
-      setLoading(false);
+  // Handle manual refresh
+  const handleManualRefresh = useCallback(async () => {
+    if (!visitorsLoading) {
+      await refetchVisitors();
     }
-  };
+  }, [refetchVisitors, visitorsLoading]);
 
-  // Fetch on mount and when dateRange changes
+  // Apply search and filter when visitors data changes
   useEffect(() => {
-    const { startDate, endDate } = dateRange[0];
-    if (startDate && endDate) {
-      fetchVisitorsForRange(startDate, endDate);
-    }
-    // eslint-disable-next-line
-  }, [dateRange]);
+    if (!visitorsData || !Array.isArray(visitorsData)) return;
 
-  useEffect(() => {
-    // Calculate stats from all visitors
-    const totalVisitors = visitors.length;
-    const checkedInVisitors = visitors.filter(v => v.is_checked_in).length;
-    const checkedOutVisitors = visitors.filter(v => v.is_checked_out).length;
-    const pendingCheckIns = visitors.filter(v => !v.is_checked_in && v.status === 'approved').length;
-    const noShowVisitors = visitors.filter(v => v.status === 'no_show').length;
-
-    setStats({
-      totalVisitors,
-      checkedInVisitors,
-      checkedOutVisitors,
-      pendingCheckIns,
-      noShowVisitors
-    });
-
-    // Apply search and filter
-    let filtered = visitors;
+    let filtered = visitorsData;
     
     // Apply search filter
     if (searchTerm) {
-      filtered = filtered.filter(visitor => 
+      filtered = filtered.filter((visitor: Visitor) => 
         visitor.visitor_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         visitor.employee_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         visitor.purpose?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -431,19 +362,19 @@ const LobbyAttendantDashboard: React.FC = () => {
     if (statusFilter !== 'all') {
       switch (statusFilter) {
         case 'checked-in':
-          filtered = filtered.filter(v => v.is_checked_in && !v.is_checked_out);
+          filtered = filtered.filter((v: Visitor) => v.is_checked_in && !v.is_checked_out);
           break;
         case 'checked-out':
-          filtered = filtered.filter(v => v.is_checked_out);
+          filtered = filtered.filter((v: Visitor) => v.is_checked_out);
           break;
         case 'pending':
-          filtered = filtered.filter(v => !v.is_checked_in && v.status === 'approved');
+          filtered = filtered.filter((v: Visitor) => !v.is_checked_in && v.status === 'approved');
           break;
         case 'no-show':
-          filtered = filtered.filter(v => v.status === 'no_show');
+          filtered = filtered.filter((v: Visitor) => v.status === 'no_show');
           break;
         case 'approved':
-          filtered = filtered.filter(v => v.status === 'approved');
+          filtered = filtered.filter((v: Visitor) => v.status === 'approved');
           break;
       }
     }
@@ -452,18 +383,20 @@ const LobbyAttendantDashboard: React.FC = () => {
     
     // Reset to first page when filters change
     setCurrentPage(1);
-  }, [visitors, searchTerm, statusFilter]);
+  }, [visitorsData, searchTerm, statusFilter]);
 
   // Update paginated visitors when filtered visitors change
   useEffect(() => {
     setPaginatedVisitors(getPaginatedVisitors());
   }, [filteredVisitors, currentPage, visitorsPerPage]);
 
+  // Redirect to login on 401/403 error
   useEffect(() => {
-    fetchAllTodayVisits();
-    const interval = setInterval(fetchAllTodayVisits, 30000);
-    return () => clearInterval(interval);
-  }, []);
+    const err = visitorsErrorObj as any;
+    if (visitorsError && (err?.response?.status === 401 || err?.response?.status === 403)) {
+      navigate('/login');
+    }
+  }, [visitorsError, visitorsErrorObj, navigate]);
 
   const quickActions = [
     {
@@ -482,7 +415,7 @@ const LobbyAttendantDashboard: React.FC = () => {
     },
   ];
 
-  if (loading) {
+  if (visitorsLoading) {
     return (
       <div className="min-h-screen bg-gray-50 p-6">
         <DashboardSkeleton />
@@ -527,6 +460,16 @@ const LobbyAttendantDashboard: React.FC = () => {
         </div>
         <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-2 sm:space-y-0 sm:space-x-2 lg:space-x-4">
           <ThemeToggle />
+          <button
+            onClick={handleManualRefresh}
+            disabled={visitorsLoading}
+            className={`inline-flex items-center px-3 sm:px-4 py-2 border border-blue-500 shadow-sm text-xs sm:text-sm font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-colors duration-200 ${
+              visitorsLoading ? 'animate-pulse' : ''
+            }`}
+          >
+            <ArrowPathIcon className={`h-4 w-4 mr-2 ${visitorsLoading ? 'animate-spin' : ''}`} />
+            {visitorsLoading ? 'Refreshing...' : 'Refresh Data'}
+          </button>
           <button
             onClick={downloadTodaysVisitorsCSV}
             disabled={downloading}
@@ -642,14 +585,14 @@ const LobbyAttendantDashboard: React.FC = () => {
       </div>
 
       {/* Analytics */}
-      {showAnalytics && <Analytics visitors={visitors} />}
+      {showAnalytics && <Analytics visitors={visitorsData || []} />}
 
       {/* Export Reports */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-medium text-gray-900 dark:text-white">Reports & Export</h2>
         </div>
-        <ExportReports visitors={visitors} stats={stats} />
+        <ExportReports visitors={visitorsData || []} stats={stats} />
       </div>
 
       {/* Quick Actions */}
@@ -721,7 +664,7 @@ const LobbyAttendantDashboard: React.FC = () => {
                 : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
             }`}
           >
-            All ({visitors.length})
+            All ({visitorsData && Array.isArray(visitorsData) ? visitorsData.length : 0})
           </button>
           <button
             onClick={() => setStatusFilter('approved')}
@@ -731,7 +674,7 @@ const LobbyAttendantDashboard: React.FC = () => {
                 : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
             }`}
           >
-            Approved ({visitors.filter(v => v.status === 'approved').length})
+            Approved ({visitorsData && Array.isArray(visitorsData) ? visitorsData.filter((v: Visitor) => v.status === 'approved').length : 0})
           </button>
           <button
             onClick={() => setStatusFilter('checked-in')}
@@ -741,7 +684,7 @@ const LobbyAttendantDashboard: React.FC = () => {
                 : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
             }`}
           >
-            Checked In ({visitors.filter(v => v.is_checked_in && !v.is_checked_out).length})
+            Checked In ({visitorsData && Array.isArray(visitorsData) ? visitorsData.filter((v: Visitor) => v.is_checked_in && !v.is_checked_out).length : 0})
           </button>
           <button
             onClick={() => setStatusFilter('pending')}
@@ -751,7 +694,7 @@ const LobbyAttendantDashboard: React.FC = () => {
                 : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
             }`}
           >
-            Pending ({visitors.filter(v => !v.is_checked_in && v.status === 'approved').length})
+            Pending ({visitorsData && Array.isArray(visitorsData) ? visitorsData.filter((v: Visitor) => !v.is_checked_in && v.status === 'approved').length : 0})
           </button>
           <button
             onClick={() => setStatusFilter('checked-out')}
@@ -761,7 +704,7 @@ const LobbyAttendantDashboard: React.FC = () => {
                 : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
             }`}
           >
-            Checked Out ({visitors.filter(v => v.is_checked_out).length})
+            Checked Out ({visitorsData && Array.isArray(visitorsData) ? visitorsData.filter((v: Visitor) => v.is_checked_out).length : 0})
           </button>
           <button
             onClick={() => setStatusFilter('no-show')}
@@ -771,7 +714,7 @@ const LobbyAttendantDashboard: React.FC = () => {
                 : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
             }`}
           >
-            No Show ({visitors.filter(v => v.status === 'no_show').length})
+            No Show ({visitorsData && Array.isArray(visitorsData) ? visitorsData.filter((v: Visitor) => v.status === 'no_show').length : 0})
           </button>
         </div>
 
@@ -806,11 +749,11 @@ const LobbyAttendantDashboard: React.FC = () => {
         )}
 
         {/* Pagination Controls */}
-        {filteredVisitors.length > 0 && (
+        {visitorsData && Array.isArray(visitorsData) && visitorsData.length > 0 && (
           <div className="mt-6 flex items-center justify-between">
             <div className="flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300">
               <span>
-                Showing {startIndex} to {endIndex} of {filteredVisitors.length} records
+                Showing {startIndex} to {endIndex} of {visitorsData.length} records
               </span>
               <span className="text-gray-400">|</span>
               <label htmlFor="page-size" className="flex items-center space-x-1">

@@ -25,6 +25,7 @@ from .views import (
     NoShowVisitAPIView,  # <-- add
     ReportsAPIView,
     ReportsDownloadAPIView,
+    EmployeeListAPIView,
 )
 
 router = DefaultRouter()
@@ -35,6 +36,7 @@ urlpatterns = [
     # Reports endpoints (moved to top to avoid conflicts)
     path('download-reports/', ReportsDownloadAPIView.as_view(), name='reports-download'),
     path('generate-reports/', ReportsAPIView.as_view(), name='reports'),
+    path('employees/', EmployeeListAPIView.as_view(), name='employee-list'),
     
     path('visitor-form/<uuid:token>/', CompleteVisitorInfoAPIView.as_view(), name='visitor-form'),
     path('visit-requests/pending/', PendingVisitsAPIView.as_view(), name='pending-visits'),

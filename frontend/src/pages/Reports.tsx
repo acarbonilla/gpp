@@ -31,6 +31,12 @@ interface ReportData {
   visitors: any[];
 }
 
+interface Employee {
+  id: number;
+  username: string;
+  display_name: string;
+}
+
 const Reports: React.FC = () => {
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -46,6 +52,8 @@ const Reports: React.FC = () => {
     visitType: 'all'
   });
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loadingEmployees, setLoadingEmployees] = useState(false);
 
   // Get auth token from localStorage
   const getAuthToken = () => {
@@ -74,6 +82,39 @@ const Reports: React.FC = () => {
       endDate: now.toISOString().split('T')[0]
     });
   }, [reportType]);
+
+  // Fetch employees for dropdown
+  const fetchEmployees = async () => {
+    try {
+      setLoadingEmployees(true);
+      setError(null);
+      
+      const token = getAuthToken();
+      if (!token) {
+        setError('No authentication token found. Please login.');
+        return;
+      }
+
+      const response = await axiosInstance.get('/api/employees/', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }
+      });
+
+      setEmployees(response.data);
+    } catch (err: any) {
+      console.error('Error fetching employees:', err);
+      // Don't set error for employees fetch failure - it's not critical
+    } finally {
+      setLoadingEmployees(false);
+    }
+  };
+
+  // Fetch employees on component mount
+  useEffect(() => {
+    fetchEmployees();
+  }, []);
 
   const fetchReportData = async () => {
     try {
@@ -430,9 +471,18 @@ const Reports: React.FC = () => {
                   value={filters.employee}
                   onChange={(e) => setFilters(prev => ({ ...prev, employee: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  disabled={loadingEmployees}
                 >
                   <option value="all">All Employees</option>
-                  {/* This would be populated from API */}
+                  {loadingEmployees ? (
+                    <option disabled>Loading employees...</option>
+                  ) : (
+                    employees.map((employee) => (
+                      <option key={employee.id} value={employee.username}>
+                        {employee.display_name}
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
               <div>

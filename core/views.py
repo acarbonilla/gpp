@@ -19,6 +19,7 @@ import json
 from io import StringIO
 import logging
 from django.db.models import Count, Q, Avg
+from django.contrib.auth.models import User
 
 
 # Set up logger
@@ -1573,71 +1574,85 @@ class ReportsDownloadAPIView(APIView):
             if visit_type_filter != 'all':
                 queryset = queryset.filter(visit_type=visit_type_filter)
             
+            # Generate CSV/Excel file
             if format_type == 'csv':
-                return self.generate_csv(queryset)
-            elif format_type == 'excel':
-                return self.generate_excel(queryset)
-            elif format_type == 'pdf':
-                return self.generate_pdf(queryset)
+                response = HttpResponse(content_type='text/csv')
+                response['Content-Disposition'] = f'attachment; filename="visitor_report_{start_date}_to_{end_date}.csv"'
+                
+                writer = csv.writer(response)
+                writer.writerow([
+                    'Visitor Name',
+                    'Employee Name',
+                    'Scheduled Time',
+                    'Status',
+                    'Check-in Time',
+                    'Check-out Time',
+                    'Purpose',
+                    'Visit Type'
+                ])
+                
+                for visit in queryset:
+                    try:
+                        visit_log = VisitLog.objects.get(visit_request=visit)
+                        check_in_time = visit_log.check_in_time.strftime('%Y-%m-%d %H:%M:%S') if visit_log.check_in_time else ''
+                        check_out_time = visit_log.check_out_time.strftime('%Y-%m-%d %H:%M:%S') if visit_log.check_out_time else ''
+                    except VisitLog.DoesNotExist:
+                        check_in_time = ''
+                        check_out_time = ''
+                    
+                    writer.writerow([
+                        visit.visitor.full_name if visit.visitor else 'Unknown',
+                        visit.employee.username,
+                        visit.scheduled_time.strftime('%Y-%m-%d %H:%M:%S'),
+                        visit.status,
+                        check_in_time,
+                        check_out_time,
+                        visit.purpose,
+                        visit.visit_type
+                    ])
+                
+                return response
             else:
-                return Response({'error': 'Unsupported format'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'error': 'Unsupported format'}, status=400)
                 
         except Exception as e:
             return Response({
                 'error': f'Failed to download report: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class EmployeeListAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsLobbyAttendant]
     
-    def generate_csv(self, queryset):
-        import logging
-        logger = logging.getLogger(__name__)
-        response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = 'attachment; filename="visitor_report.csv"'
-        
-        writer = csv.writer(response)
-        writer.writerow([
-            'Visitor Name', 'Employee', 'Scheduled Time', 'Status', 
-            'Check-in Time', 'Check-out Time', 'Purpose', 'Visit Type', 'Row Error'
-        ])
-        
-        for visit in queryset.select_related('visitor', 'employee'):
-            try:
-                # Get visit log if it exists
-                try:
-                    visit_log = VisitLog.objects.get(visit_request=visit)
-                    check_in_time = visit_log.check_in_time.strftime('%Y-%m-%d %H:%M') if visit_log.check_in_time else ''
-                    check_out_time = visit_log.check_out_time.strftime('%Y-%m-%d %H:%M') if visit_log.check_out_time else ''
-                except VisitLog.DoesNotExist:
-                    check_in_time = ''
-                    check_out_time = ''
+    def get(self, request):
+        """Get list of employees and lobby attendants for reports filter dropdown"""
+        try:
+            # Get all users (employees and lobby attendants) who have hosted visitors
+            users = User.objects.filter(
+                Q(groups__name='employee') | Q(groups__name='lobby_attendant'),
+                visitrequest__isnull=False  # Only users who have hosted visitors
+            ).distinct().values('id', 'username', 'first_name', 'last_name').order_by('first_name', 'last_name')
+            
+            user_list = []
+            for user in users:
+                # Create a display name: "First Last (username)" or just "username" if no name
+                if user['first_name'] and user['last_name']:
+                    display_name = f"{user['first_name']} {user['last_name']} ({user['username']})"
+                elif user['first_name']:
+                    display_name = f"{user['first_name']} ({user['username']})"
+                else:
+                    display_name = user['username']
                 
-                writer.writerow([
-                    visit.visitor.full_name if visit.visitor else 'Unknown',
-                    visit.employee.username,
-                    visit.scheduled_time.strftime('%Y-%m-%d %H:%M'),
-                    visit.status,
-                    check_in_time,
-                    check_out_time,
-                    visit.purpose,
-                    visit.visit_type,
-                    ''
-                ])
-            except Exception as e:
-                logger.error(f"Error writing row for VisitRequest id={visit.id}: {e}")
-                writer.writerow([
-                    getattr(visit.visitor, 'full_name', 'Unknown'),
-                    getattr(visit.employee, 'username', 'Unknown'),
-                    getattr(visit, 'scheduled_time', ''),
-                    getattr(visit, 'status', ''),
-                    '', '', '', '',
-                    f'Error: {e}'
-                ])
-        
-        return response
-    
-    def generate_excel(self, queryset):
-        # For now, return CSV as Excel (you can implement proper Excel generation later)
-        return self.generate_csv(queryset)
-    
-    def generate_pdf(self, queryset):
-        # For now, return CSV as PDF (you can implement proper PDF generation later)
-        return self.generate_csv(queryset)
+                user_list.append({
+                    'id': user['id'],
+                    'username': user['username'],
+                    'display_name': display_name
+                })
+            
+            return Response(user_list)
+            
+        except Exception as e:
+            logger.error(f"Error fetching employee list: {e}")
+            return Response({
+                'error': f'Failed to fetch employee list: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

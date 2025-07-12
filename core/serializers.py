@@ -69,6 +69,7 @@ class VisitRequestSerializer(serializers.ModelSerializer):
     visitor = VisitorSerializer(required=False, read_only=True)
     invitation_link = serializers.SerializerMethodField()
     employee_id = serializers.IntegerField(source='employee.id', read_only=True)
+    is_checked_out = serializers.ReadOnlyField()
 
     class Meta:
         model = VisitRequest
