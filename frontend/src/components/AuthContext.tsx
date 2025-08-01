@@ -79,26 +79,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const login = async (username: string, password: string): Promise<boolean> => {
-    try {
-      const response = await axiosInstance.post('/api/auth/login/', {
-        username,
-        password,
-      });
+    const response = await axiosInstance.post('/api/auth/login/', {
+      username,
+      password,
+    });
 
-      // Use response.data.token and response.data.refresh
-      const { token, refresh } = response.data;
-      localStorage.setItem('accessToken', token);
-      localStorage.setItem('refreshToken', refresh);
-      axiosInstance.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    // Use response.data.token and response.data.refresh
+    const { token, refresh } = response.data;
+    localStorage.setItem('accessToken', token);
+    localStorage.setItem('refreshToken', refresh);
+    axiosInstance.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 
-      // Fetch complete user info with groups
-      const userResponse = await axiosInstance.get('/api/auth/user/');
-      setUser(userResponse.data);
-      return true;
-    } catch (error) {
-      console.error('Login failed:', error);
-      return false;
-    }
+    // Fetch complete user info with groups
+    const userResponse = await axiosInstance.get('/api/auth/user/');
+    setUser(userResponse.data);
+    return true;
   };
 
   const logout = async () => {
@@ -120,16 +115,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const refreshToken = async () => {
     try {
+      const refreshTokenValue = localStorage.getItem('refreshToken');
+      if (!refreshTokenValue) {
+        throw new Error('No refresh token available');
+      }
+
       const response = await axiosInstance.post('/api/token/refresh/', {
-        refresh: localStorage.getItem('refreshToken'),
+        refresh: refreshTokenValue,
       });
+      
       const { access } = response.data;
       localStorage.setItem('accessToken', access);
       axiosInstance.defaults.headers.common['Authorization'] = `Bearer ${access}`;
+      
       return true;
     } catch (error) {
       console.error('Token refresh failed:', error);
-      await logout(); // Log out on token refresh failure
+      // Don't automatically logout here - let the axios interceptor handle it
       return false;
     }
   };

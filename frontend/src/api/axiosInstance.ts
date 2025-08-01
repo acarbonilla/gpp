@@ -23,35 +23,53 @@ axiosInstance.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor: handle 401 and refresh
+// Response interceptor: handle 401 and refresh tokens automatically
 axiosInstance.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-    if (
-      error.response &&
-      error.response.status === 401 &&
-      !originalRequest._retry
-    ) {
+    
+    // If it's a 401 error and we haven't tried to refresh yet
+    if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
+      
+      // Don't try to refresh tokens for login requests
+      if (originalRequest.url?.includes('/api/auth/login/')) {
+        return Promise.reject(error);
+      }
+      
       try {
         const refreshToken = localStorage.getItem('refreshToken');
-        if (!refreshToken) throw new Error('No refresh token');
+        if (!refreshToken) {
+          // No refresh token available, redirect to login
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('refreshToken');
+          window.location.href = '/login';
+          return Promise.reject(error);
+        }
+        
+        // Try to refresh the token
         const response = await axios.post(`${baseURL}/api/token/refresh/`, {
           refresh: refreshToken,
         });
-        const newAccessToken = response.data.access;
-        localStorage.setItem('accessToken', newAccessToken);
-        originalRequest.headers['Authorization'] = `Bearer ${newAccessToken}`;
+        
+        const { access } = response.data;
+        localStorage.setItem('accessToken', access);
+        
+        // Update the original request with new token
+        originalRequest.headers['Authorization'] = `Bearer ${access}`;
+        
+        // Retry the original request
         return axiosInstance(originalRequest);
       } catch (refreshError) {
-        // Optionally clear tokens and redirect to login
+        // Refresh failed, clear tokens and redirect to login
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
         window.location.href = '/login';
         return Promise.reject(refreshError);
       }
     }
+    
     return Promise.reject(error);
   }
 );

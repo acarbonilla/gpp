@@ -322,9 +322,15 @@ const Dashboard: React.FC = () => {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
-  // Add polling with setInterval - reduced frequency to prevent performance issues
+  // Re-enabled polling with better cleanup
   useEffect(() => {
+    let isMounted = true;
+    
     const interval = setInterval(() => {
+      if (!isMounted) {
+        return;
+      }
+      
       // Only refetch if not currently loading
       if (!enhancedStatsLoading) {
         refetchEnhancedStats();
@@ -337,7 +343,11 @@ const Dashboard: React.FC = () => {
       }
       fetchVisitorsForNotifications();
     }, 60000); // 60 seconds instead of 30
-    return () => clearInterval(interval);
+    
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, [refetchEnhancedStats, refetchStats, refetch, enhancedStatsLoading, statsLoading, isFetching]);
 
   // Update useEffect to refetch when page or pageSize changes

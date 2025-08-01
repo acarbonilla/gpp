@@ -10,7 +10,6 @@ import {
   XCircleIcon,
   PlusIcon,
   ArrowPathIcon,
-  ChartBarIcon,
   ExclamationTriangleIcon,
   InformationCircleIcon,
   ChevronLeftIcon,
@@ -24,9 +23,8 @@ import ThemeToggle from '../components/ThemeToggle';
 import ExportReports from '../components/ExportReports';
 import BulkActions from '../components/BulkActions';
 import TouchOptimizedCard from '../components/TouchOptimizedCard';
-import dayjs from 'dayjs';
-import { DateRange, Range, RangeKeyDict } from 'react-date-range';
-import { addDays, startOfWeek, endOfWeek, format } from 'date-fns';
+import { DateRange } from 'react-date-range';
+import { startOfWeek, endOfWeek, format } from 'date-fns';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 
@@ -65,7 +63,6 @@ const LobbyAttendantDashboard: React.FC = () => {
   const [filteredVisitors, setFilteredVisitors] = useState<Visitor[]>([]);
   const [showAnalytics, setShowAnalytics] = useState(true);
   const [showBulkActions, setShowBulkActions] = useState(false);
-  const [searchFocused, setSearchFocused] = useState(false);
   const [downloading, setDownloading] = useState(false);
   
   // Pagination state
@@ -82,7 +79,7 @@ const LobbyAttendantDashboard: React.FC = () => {
   ]);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
-  const { visitors, setVisitors: setContextVisitors } = useVisitors();
+  const { setVisitors: setContextVisitors } = useVisitors();
 
   const getAuthToken = () => {
     return localStorage.getItem('accessToken');
@@ -123,14 +120,18 @@ const LobbyAttendantDashboard: React.FC = () => {
     isLoading: visitorsLoading, 
     isError: visitorsError, 
     error: visitorsErrorObj,
-    refetch: refetchVisitors 
+    refetch: refetchVisitors,
+    
+    isRefetching: isRefetchingVisitors
   } = useQuery<Visitor[]>({
     queryKey: ['lobby-visitors', startDateStr, endDateStr],
     queryFn: fetchVisitorsForRange,
-    refetchInterval: 30000, // 30 seconds
+    refetchInterval: 60000, // Increased to 60 seconds to reduce frequency
     refetchIntervalInBackground: true,
-    staleTime: 30000, // Consider data fresh for 30 seconds
+    staleTime: 45000, // Consider data fresh for 45 seconds
     gcTime: 5 * 60 * 1000, // Cache for 5 minutes (renamed from cacheTime in React Query v4+)
+    refetchOnWindowFocus: false, // Prevent refetch on window focus
+    refetchOnMount: true, // Enable refetch on component mount to ensure data loads
   });
 
   // Update context when data changes
@@ -275,25 +276,15 @@ const LobbyAttendantDashboard: React.FC = () => {
     }
   };
 
-  const shouldShowNoShowButton = (visitor: Visitor) => {
-    // Always compare in UTC
-    const nowUTC = new Date();
-    const scheduledUTC = new Date(visitor.scheduled_time);
-    
-    // Add a small buffer to prevent false positives due to timezone differences
-    const timeDiff = nowUTC.getTime() - scheduledUTC.getTime();
-    const minutesDiff = timeDiff / (1000 * 60);
-    
-    return minutesDiff >= 15 && !visitor.is_checked_in && visitor.status === 'approved';
-  };
+  
 
-  const getTotalPages = () => Math.ceil(filteredVisitors.length / visitorsPerPage);
+  const getTotalPages = useCallback(() => Math.ceil(filteredVisitors.length / visitorsPerPage), [filteredVisitors.length, visitorsPerPage]);
 
-  const getPaginatedVisitors = () => {
+  const getPaginatedVisitors = useCallback(() => {
     const startIndex = (currentPage - 1) * visitorsPerPage;
     const endIndex = startIndex + visitorsPerPage;
     return filteredVisitors.slice(startIndex, endIndex);
-  };
+  }, [currentPage, visitorsPerPage, filteredVisitors]);
 
   const handlePageChange = (page: number) => setCurrentPage(page);
   const handlePageSizeChange = (size: number) => setVisitorsPerPage(size);
@@ -385,9 +376,11 @@ const LobbyAttendantDashboard: React.FC = () => {
     setCurrentPage(1);
   }, [visitorsData, searchTerm, statusFilter]);
 
-  // Update paginated visitors when filtered visitors change
+     // Update paginated visitors when filtered visitors change
   useEffect(() => {
-    setPaginatedVisitors(getPaginatedVisitors());
+    const startIndex = (currentPage - 1) * visitorsPerPage;
+    const endIndex = startIndex + visitorsPerPage;
+    setPaginatedVisitors(filteredVisitors.slice(startIndex, endIndex));
   }, [filteredVisitors, currentPage, visitorsPerPage]);
 
   // Redirect to login on 401/403 error
@@ -417,8 +410,44 @@ const LobbyAttendantDashboard: React.FC = () => {
 
   if (visitorsLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 p-6">
-        <DashboardSkeleton />
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="text-center space-y-6">
+          {/* Animated Logo/Icon */}
+          <div className="relative">
+            <div className="w-24 h-24 mx-auto bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl shadow-2xl flex items-center justify-center animate-pulse">
+              <UserGroupIcon className="h-12 w-12 text-white animate-bounce" />
+            </div>
+            {/* Rotating ring around the icon */}
+            <div className="absolute inset-0 w-24 h-24 mx-auto border-4 border-blue-300 border-t-blue-600 rounded-2xl animate-spin"></div>
+          </div>
+          
+          {/* Loading text with typing animation */}
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold text-gray-800 animate-pulse">
+              Loading Dashboard
+            </h2>
+            <p className="text-gray-600 text-lg">
+              Preparing your visitor management tools...
+            </p>
+          </div>
+          
+          {/* Progress dots */}
+          <div className="flex justify-center space-x-2">
+            <div className="w-3 h-3 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+            <div className="w-3 h-3 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+            <div className="w-3 h-3 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+          </div>
+          
+          {/* Loading bar */}
+          <div className="w-64 h-2 bg-gray-200 rounded-full overflow-hidden mx-auto">
+            <div className="h-full bg-gradient-to-r from-blue-500 to-purple-600 rounded-full animate-pulse" style={{ width: '60%' }}></div>
+          </div>
+          
+          {/* Status text */}
+          <p className="text-sm text-gray-500 font-medium">
+            Fetching visitor data...
+          </p>
+        </div>
       </div>
     );
   }
@@ -428,7 +457,7 @@ const LobbyAttendantDashboard: React.FC = () => {
   const endIndex = Math.min(currentPage * visitorsPerPage, filteredVisitors.length);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Date Range Picker */}
       <div className="flex items-center space-x-4 mb-4">
         <button
@@ -457,6 +486,14 @@ const LobbyAttendantDashboard: React.FC = () => {
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">Lobby Attendant Dashboard</h1>
           <p className="mt-2 text-gray-600 dark:text-gray-400">Welcome! Manage visitor flow and check-ins for the week</p>
+          {isRefetchingVisitors && (
+            <div className="mt-2 flex items-center justify-center p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <div className="w-4 h-4 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin"></div>
+                <span className="text-sm font-medium text-blue-700">Updating visitor data...</span>
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-2 sm:space-y-0 sm:space-x-2 lg:space-x-4">
           <ThemeToggle />
@@ -465,10 +502,10 @@ const LobbyAttendantDashboard: React.FC = () => {
             disabled={visitorsLoading}
             className={`inline-flex items-center px-3 sm:px-4 py-2 border border-blue-500 shadow-sm text-xs sm:text-sm font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-colors duration-200 ${
               visitorsLoading ? 'animate-pulse' : ''
-            }`}
+            } ${isRefetchingVisitors ? 'ring-2 ring-blue-300' : ''}`}
           >
-            <ArrowPathIcon className={`h-4 w-4 mr-2 ${visitorsLoading ? 'animate-spin' : ''}`} />
-            {visitorsLoading ? 'Refreshing...' : 'Refresh Data'}
+            <ArrowPathIcon className={`h-4 w-4 mr-2 ${visitorsLoading || isRefetchingVisitors ? 'animate-spin' : ''}`} />
+            {visitorsLoading ? 'Refreshing...' : isRefetchingVisitors ? 'Updating...' : 'Refresh Data'}
           </button>
           <button
             onClick={downloadTodaysVisitorsCSV}
@@ -487,7 +524,15 @@ const LobbyAttendantDashboard: React.FC = () => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-5">
+      <div className={`grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-5 transition-all duration-300 relative ${isRefetchingVisitors ? 'opacity-90' : 'opacity-100'}`}>
+        {isRefetchingVisitors && (
+          <div className="absolute inset-0 bg-white/50 backdrop-blur-sm rounded-lg flex items-center justify-center z-10">
+            <div className="flex items-center space-x-2">
+              <div className="w-5 h-5 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin"></div>
+              <span className="text-sm font-medium text-blue-700">Updating stats...</span>
+            </div>
+          </div>
+        )}
         <div className="bg-blue-100 border-b-4 border-blue-500 rounded-lg shadow flex items-center p-5">
           <div className="flex-shrink-0 rounded-md p-3 bg-blue-500">
             <UserGroupIcon className="h-6 w-6 text-white" />
@@ -647,8 +692,6 @@ const LobbyAttendantDashboard: React.FC = () => {
               placeholder="Search weekly records by visitors, employees, or purpose..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              onFocus={() => setSearchFocused(true)}
-              onBlur={() => setSearchFocused(false)}
               className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:placeholder-gray-400"
             />
           </div>

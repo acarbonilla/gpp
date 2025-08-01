@@ -71,16 +71,7 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({
     const newNotifications: Notification[] = [];
     const now = new Date();
 
-    // Only log in development and limit the frequency
-    if (process.env.NODE_ENV === 'development' && visitors.length > 0) {
-      console.log('🔔 NotificationSystem: Processing', visitors.length, 'visitors for', currentUsername);
-    }
-
     visitors.forEach((visitor, index) => {
-      // Only log in development for the first few visitors
-      if (process.env.NODE_ENV === 'development' && index < 3) {
-        console.log(`🔔 Processing visitor ${index + 1}:`, visitor.visitor_name);
-      }
 
       // For Lobby Attendants - see all visitor notifications
       if (isLobbyAttendant) {
@@ -243,15 +234,11 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({
 
         // Check-out notification for employee
         if (visitor.is_checked_out && visitor.check_out_time) {
-          console.log('🔔 NotificationSystem: ✅ Found checked-out visitor:', visitor.visitor_name);
           const checkOutTime = new Date(visitor.check_out_time);
           const checkOutDiff = now.getTime() - checkOutTime.getTime();
           const checkOutMinutesDiff = checkOutDiff / (1000 * 60);
           
-          console.log('🔔 NotificationSystem: Check-out time diff:', checkOutMinutesDiff, 'minutes');
-          
           if (checkOutMinutesDiff <= 30) {
-            console.log('🔔 NotificationSystem: Creating check-out notification');
             const notificationId = `checkout_${visitor.visit_id}`;
             newNotifications.push({
               id: notificationId,
@@ -264,11 +251,7 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({
               employeeName: visitor.employee_name,
               visitorName: visitor.visitor_name
             });
-          } else {
-            console.log('🔔 NotificationSystem: Check-out too old (>30 minutes)');
           }
-        } else {
-          console.log('🔔 NotificationSystem: Visitor not checked out or no check-out time');
         }
 
         // No-show notification for employee (30+ minutes late)
@@ -280,7 +263,6 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({
           // Add buffer to prevent false positives
           const bufferMinutes = 1;
           if (minutesLate >= (30 + bufferMinutes) && minutesLate <= 120) { // Show for 2 hours after 30 min late
-            console.log('🔔 NotificationSystem: Creating no-show notification for employee');
             const notificationId = `noshow_${visitor.visit_id}`;
             newNotifications.push({
               id: notificationId,
@@ -296,21 +278,12 @@ const NotificationSystem: React.FC<NotificationSystemProps> = ({
           }
         }
       } else if (isEmployee) {
-        console.log('🔔 NotificationSystem: ❌ Employee visitor mismatch:', {
-          visitor_employee: visitor.employee_name,
-          current_user: currentUsername,
-          match: visitor.employee_name === currentUsername
-        });
+        // Employee visitor mismatch - no console log needed
       }
     });
 
     // Sort by timestamp (newest first)
     newNotifications.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-    
-    // Only log in development
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🔔 NotificationSystem: Created', newNotifications.length, 'notifications');
-    }
     
     return newNotifications;
   }, [visitors, isLobbyAttendant, isEmployee, currentUsername]);

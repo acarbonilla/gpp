@@ -1345,11 +1345,16 @@ class TodayAllVisitsAPIView(APIView):
     def get(self, request):
         from datetime import datetime, timedelta
         from django.utils import timezone
+        from django.db import models
         import pytz
 
-        # Get query parameters
-        start_date_str = request.query_params.get('start_date')
-        end_date_str = request.query_params.get('end_date')
+        # Get query parameters - handle both DRF and regular Django requests
+        if hasattr(request, 'query_params'):
+            start_date_str = request.query_params.get('start_date')
+            end_date_str = request.query_params.get('end_date')
+        else:
+            start_date_str = request.GET.get('start_date')
+            end_date_str = request.GET.get('end_date')
 
         # Default to current week (Monday to Sunday)
         now = timezone.now()
@@ -1368,7 +1373,14 @@ class TodayAllVisitsAPIView(APIView):
             end_of_week = datetime.strptime(end_date_str, '%Y-%m-%d') + timedelta(days=1)
             end_of_week = timezone.make_aware(end_of_week, timezone.get_current_timezone())
 
-        visits = VisitRequest.objects.filter(scheduled_time__gte=start_of_week, scheduled_time__lt=end_of_week)
+        # Include all visits in the date range, including walk-ins
+        # Also include visits created today regardless of scheduled time
+        visits = VisitRequest.objects.filter(
+            models.Q(scheduled_time__gte=start_of_week, scheduled_time__lt=end_of_week) |
+            models.Q(created_at__date=timezone.now().date())
+        )
+        
+
         data = []
         for visit in visits:
             try:
@@ -1381,7 +1393,7 @@ class TodayAllVisitsAPIView(APIView):
                 'visitor_id': visit.visitor.id if visit.visitor else None,
                 'visitor_name': visit.visitor.full_name if visit.visitor else '',
                 'visitor_email': visit.visitor.email if visit.visitor else '',
-                'host_name': visit.employee.get_full_name() or visit.employee.username,
+                'employee_name': visit.employee.get_full_name() or visit.employee.username,
                 'purpose': visit.purpose,
                 'scheduled_time': visit.scheduled_time,
                 'visit_type': visit.visit_type,

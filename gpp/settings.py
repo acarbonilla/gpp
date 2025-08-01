@@ -96,6 +96,10 @@ DATABASES = {
         'PASSWORD': os.getenv('DB_PASSWORD'),
         'HOST': os.getenv('DB_HOST'),
         'PORT': os.getenv('DB_PORT'),
+        'OPTIONS': {
+            'init_command': "SET time_zone = '+08:00'",
+            'charset': 'utf8mb4',
+        },
     }
 }
 
@@ -293,11 +297,11 @@ REST_FRAMEWORK = {
 # JWT Settings
 from datetime import timedelta
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
-    'ROTATE_REFRESH_TOKENS': False,
-    'BLACKLIST_AFTER_ROTATION': True,
-    'UPDATE_LAST_LOGIN': False,
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),  # Good for security
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),     # Convenient for users
+    'ROTATE_REFRESH_TOKENS': True,                   # Enhanced security
+    'BLACKLIST_AFTER_ROTATION': True,                # Prevent token reuse
+    'UPDATE_LAST_LOGIN': True,                       # Track user activity
 
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
@@ -314,4 +318,9 @@ SIMPLE_JWT = {
     'TOKEN_TYPE_CLAIM': 'token_type',
 
     'JTI_CLAIM': 'jti',
+    
+    # Additional security settings
+    'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
+    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=15),
+    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
 }

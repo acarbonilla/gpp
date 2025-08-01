@@ -66,10 +66,6 @@ const LobbyAttendant: React.FC = () => {
       },
     });
 
-    console.log('Raw API response:', response.data);
-    console.log('Response data type:', typeof response.data);
-    console.log('Response data length:', Array.isArray(response.data) ? response.data.length : 'Not an array');
-    
     return response.data;
   };
 
@@ -259,15 +255,11 @@ const LobbyAttendant: React.FC = () => {
   // Show approved and not expired visitors
   const now = new Date();
   const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  console.log('Current time:', now);
-  console.log('24 hours ago:', twentyFourHoursAgo);
-  console.log('All visitors before filtering:', visitorsData);
   
   const approvedVisitors = visitorsData && Array.isArray(visitorsData) ? visitorsData.filter((v: Visitor) => {
     const scheduledTime = new Date(v.scheduled_time);
     const isApproved = v.status === 'approved';
     const isNotExpired = scheduledTime >= twentyFourHoursAgo;
-    console.log(`Visitor ${v.visitor_name}: status=${v.status}, scheduled=${scheduledTime}, 24hAgo=${twentyFourHoursAgo}, isApproved=${isApproved}, isNotExpired=${isNotExpired}`);
     return isApproved && isNotExpired;
   }) : [];
   
@@ -299,8 +291,6 @@ const LobbyAttendant: React.FC = () => {
         return true;
     }
   });
-  
-  console.log('Filtered visitors:', filteredVisitors);
 
   // Calculate pagination
   const totalPages = Math.ceil(statusFilteredVisitors.length / pageSize);
@@ -616,7 +606,7 @@ const LobbyAttendant: React.FC = () => {
                               </svg>
                               Approved
                             </span>
-                            {visitor.visit_type === 'walk_in' && (
+                            {visitor.visit_type === 'walkin' && (
                               <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                                 <svg className="h-3 w-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />

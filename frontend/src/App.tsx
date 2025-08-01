@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
 import Navbar from './components/Navbar';
 import Dashboard from './pages/Dashboard';
@@ -46,6 +46,7 @@ const RoleBasedMyVisitors: React.FC = () => {
 
 function App() {
   useAuth(); // still call to enforce auth, but no role-based dashboard
+  
   return (
     <RefreshProvider>
       <VisitorProvider>
@@ -58,6 +59,11 @@ function App() {
                 <Route path="/visitor-form/:token" element={<VisitorForm />} />
                 {/* Protected Routes */}
                 <Route path="/" element={
+                  <ProtectedRoute>
+                    <RoleBasedDashboard />
+                  </ProtectedRoute>
+                } />
+                <Route path="/dashboard" element={
                   <ProtectedRoute>
                     <RoleBasedDashboard />
                   </ProtectedRoute>
